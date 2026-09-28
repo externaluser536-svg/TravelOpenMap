@@ -1,13 +1,13 @@
 // Сетка исследованных ячеек («туман войны»).
 //
-// Мир разбит на квадратные ячейки на 19-м уровне Web Mercator (≈ 76 м на экваторе,
-// ≈ 55 м на широте Монако). Открытие карты = пометка ячеек внутри радиуса вокруг
+// Мир разбит на квадратные ячейки на 20-м уровне Web Mercator (≈ 38 м на экваторе,
+// ≈ 27 м на широте Монако). Открытие карты = пометка ячеек внутри радиуса вокруг
 // позиции. Ячейки хранятся по «чанкам» 64×64, чтобы быстро отдавать только видимые
 // и сохранять в БД только изменённые части.
 
 import { lngToX, latToY, xToLng, yToLat, metersPerUnit, type LngLat } from './geo';
 
-export const CELL_ZOOM = 19;
+export const CELL_ZOOM = 20;
 export const CELLS_PER_AXIS = 2 ** CELL_ZOOM;
 const CHUNK_BITS = 6;
 const CHUNK_SIZE = 1 << CHUNK_BITS; // 64
@@ -23,7 +23,7 @@ export interface ExclusionZone {
   radius: number;
 }
 
-/** Ячейка → ключ-число. x, y < 2^19, поэтому x * 2^19 + y безопасно помещается в double. */
+/** Ячейка → ключ-число. x, y < 2^20, поэтому x * 2^20 + y безопасно помещается в double (< 2^53). */
 export const cellKey = (x: number, y: number): number => x * CELLS_PER_AXIS + y;
 export const keyX = (k: number): number => Math.floor(k / CELLS_PER_AXIS);
 export const keyY = (k: number): number => k - keyX(k) * CELLS_PER_AXIS;

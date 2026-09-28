@@ -178,7 +178,8 @@ export function MapView() {
     map.on('idle', () => ref.current?.setAttribute('data-map-idle', String(Date.now())));
 
     if (import.meta.env.DEV || import.meta.env.MODE === 'demo') {
-      (window as unknown as { __map: MlMap }).__map = map;
+      (window as unknown as { __map: MlMap; __fog: FogRenderer }).__map = map;
+      (window as unknown as { __fog: FogRenderer }).__fog = fog;
     }
 
     return () => {

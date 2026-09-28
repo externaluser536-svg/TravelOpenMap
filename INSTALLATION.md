@@ -1,0 +1,161 @@
+# 🛠️ Установка, запуск и сборка TravelOpenMap
+
+*[English → INSTALLATION.en.md](INSTALLATION.en.md)*
+
+Содержание: [требования](#1-требования) · [запуск в браузере](#2-запуск-в-браузере-самый-быстрый-путь) · [проверки](#3-тесты-и-проверки) · [Android](#4-сборка-android) · [iOS](#5-сборка-ios) · [офлайн-карты](#6-офлайн-карты) · [скриншоты](#7-скриншоты-и-иконки) · [решение проблем](#8-решение-проблем)
+
+---
+
+## 1. Требования
+
+| Для чего | Что нужно |
+|---|---|
+| Всё | **Node.js ≥ 20** (проверено на 22) и npm |
+| Android | **JDK 17+**, **Android Studio** (Hedgehog или новее) с Android SDK 36, эмулятор или телефон с включённой отладкой по USB |
+| iOS | **macOS**, **Xcode 15+**, **CocoaPods** (`sudo gem install cocoapods`), аккаунт Apple Developer для установки на устройство |
+| Свои карты из `.osm.pbf` | **Python ≥ 3.10** (для `tools/osm2pmtiles.py`) |
+| Скриншоты и e2e-тесты | Chromium (Playwright): `npx playwright install chromium` |
+
+## 2. Запуск в браузере (самый быстрый путь)
+
+```bash
+git clone https://github.com/externaluser536-svg/TravelOpenMap.git
+cd TravelOpenMap
+git checkout claude/dreamy-gauss-2mrns2      # ветка с приложением
+
+npm install
+npm run dev
+```
+
+Откройте <http://localhost:5173>. Чтобы увидеть приложение «в деле» без прогулки по Монако, откройте **<http://localhost:5173/?demo>** — загрузятся демо-данные: пеший маршрут по реальным улицам Монако, заметки с фото, история за 2 недели.
+
+* Геолокация в браузере работает на `localhost` (спросит разрешение). Для проверки без выхода из дома используйте эмуляцию: DevTools → Sensors → Location.
+* Камера/видео: кнопки «Фото»/«Видео» открывают выбор файла (на телефоне — камеру).
+* Компас в десктопном браузере недоступен (нет датчика) — на телефоне заработает.
+
+Продакшн-сборка для веба (PWA-подобная, статические файлы):
+
+```bash
+npm run build            # → dist/  (проверка типов + сборка)
+npm run preview          # http://localhost:4173
+```
+
+`dist/` можно положить на любой статический хостинг — но нужен доступ к файлам карты (`dist/maps/*.pmtiles`) с поддержкой HTTP Range (это умеют nginx, Caddy, GitHub Pages, Netlify и `vite preview`).
+
+## 3. Тесты и проверки
+
+```bash
+npm run typecheck     # TypeScript
+npm test              # 40 юнит-тестов: гео, туман, уровни, челленджи, БД, движок, i18n
+npm run test:e2e      # сборка + проверка «0 внешних запросов» (Playwright/Chromium)
+npm run test:all      # всё вышеперечисленное
+```
+
+`test:e2e` запускает продакшн-сборку в Chromium **с отключённым DNS для внешних хостов**, эмулирует GPS-прогулку, создаёт заметку с фото и проверяет, что ни один запрос не покинул локальный origin, а попытки `fetch`/`<img>`/`WebSocket` наружу блокируются политикой CSP.
+
+## 4. Сборка Android
+
+Один раз (создаёт/обновляет нативный проект и настраивает разрешения):
+
+```bash
+npm install
+npm run cap:sync        # сборка веб-части → npx cap sync → scripts/configure-native.mjs
+```
+
+Проект `android/` уже лежит в репозитории. Дальше — на выбор.
+
+**А) Через Android Studio (рекомендуется для первого запуска)**
+
+```bash
+npm run android         # соберёт веб-часть, синхронизирует и откроет Android Studio
+```
+
+В Android Studio дождитесь синхронизации Gradle → выберите устройство/эмулятор → ▶ **Run**.
+
+**Б) Из командной строки — отладочный APK**
+
+```bash
+export ANDROID_HOME=$HOME/Android/Sdk        # путь к вашему Android SDK
+npm run android:apk
+# → android/app/build/outputs/apk/debug/app-debug.apk
+adb install -r android/app/build/outputs/apk/debug/app-debug.apk
+```
+
+**В) Релизная сборка (AAB для Google Play / подписанный APK)**
+
+1. Создайте ключ: `keytool -genkey -v -keystore travelopenmap.jks -keyalg RSA -keysize 2048 -validity 10000 -alias tom`
+2. Android Studio → *Build → Generate Signed Bundle / APK* (или настройте `signingConfigs` в `android/app/build.gradle`).
+3. Храните `.jks` и пароли **вне репозитория**.
+
+Идентификатор приложения — `app.travelopenmap` (меняется в [`capacitor.config.ts`](capacitor.config.ts); после смены выполните `npx cap sync`).
+
+> ℹ️ **Разрешение `INTERNET` намеренно удалено** из `AndroidManifest.xml` — приложение не должно выходить в сеть, и ОС гарантирует это. Для live-reload при разработке (`npx cap run android -l --external`) верните его командой `node scripts/configure-native.mjs --keep-internet` и перед релизом снова запустите `npm run cap:sync`.
+
+Что запросит приложение на Android: геолокация (точная), камера и микрофон (запись видео), датчики ориентации (без разрешения).
+
+## 5. Сборка iOS
+
+Только на macOS.
+
+```bash
+npm install
+npm run cap:sync
+cd ios/App && pod install && cd ../..    # если CocoaPods не отработал автоматически
+npm run ios                              # откроет Xcode
+```
+
+В Xcode: выберите target **App** → *Signing & Capabilities* → укажите **Team** → выберите устройство/симулятор → ▶ **Run**. Тексты запросов разрешений (геолокация, камера, микрофон, фото, датчики движения) уже добавлены в `Info.plist` скриптом `scripts/configure-native.mjs`.
+
+Для App Store: *Product → Archive → Distribute App*.
+
+## 6. Офлайн-карты
+
+В приложении уже есть демо-карта **Монако** (`public/maps/monaco.pmtiles`, 0,8 МБ). Чтобы ездить по миру, добавьте свои:
+
+**Вариант 1 — импорт в приложении (без пересборки).** Получите файл `.pmtiles` нужного региона (см. ниже), скопируйте на телефон и откройте *Профиль → Офлайн-карты → Импортировать .pmtiles*. Файл сохраняется в памяти приложения.
+
+**Вариант 2 — встроить в сборку.** Положите файл в `public/maps/` и добавьте запись в `public/maps/manifest.json`:
+
+```json
+{ "maps": [ { "id": "bundled:paris", "name": "Париж", "file": "paris.pmtiles" } ] }
+```
+
+Как получить `.pmtiles` региона:
+
+```bash
+# A) вырезать область из готовой сборки Protomaps (нужен go-pmtiles: https://github.com/protomaps/go-pmtiles/releases)
+pmtiles extract https://build.protomaps.com/YYYYMMDD.pmtiles paris.pmtiles --bbox=2.22,48.81,2.47,48.91 --maxzoom=15
+
+# B) собрать самим из выгрузки OSM (.osm.pbf, например с download.geofabrik.de) — полностью локально
+npm run map:demo                                   # демо: скачает Монако и соберёт
+tools/build-demo-map.sh путь/region.osm.pbf "Мой регион" region
+#   или напрямую:
+python3 -m venv tools/.venv && tools/.venv/bin/pip install -r tools/requirements.txt
+tools/.venv/bin/python tools/osm2pmtiles.py region.osm.pbf public/maps/region.pmtiles --name "Мой регион" --maxzoom 15 --langs en,ru
+```
+
+Подробности, размеры и способ для стран/континентов (Planetiler) — в [docs/OFFLINE_MAPS.md](docs/OFFLINE_MAPS.md).
+
+Шрифты и спрайты карты (`public/map-assets/`) уже в репозитории. Пересоздать: `npm run assets:fonts` (скачивает один раз из `protomaps/basemaps-assets`; после этого интернет не нужен).
+
+## 7. Скриншоты и иконки
+
+```bash
+npm run screenshots               # demo-сборка + все экраны → docs/screenshots/
+npm run icons                     # resources/*.png из public/icon.svg + иконки/сплэш для Android и iOS
+```
+
+## 8. Решение проблем
+
+| Симптом | Причина / решение |
+|---|---|
+| **Пустая карта, только фон** | Файл карты не найден или не покрывает ваше место. Проверьте `public/maps/manifest.json`, откройте *Профиль → Офлайн-карты* и нажмите значок карты (перейти к области). Баннер «Здесь нет офлайн-карты» появляется, когда центр экрана вне покрытия. |
+| **Белый/чёрный экран на Android после удаления INTERNET** | На ряде сборок WebView `https://localhost` требует разрешение. Верните: `node scripts/configure-native.mjs --keep-internet && npx cap sync android` (CSP всё равно блокирует внешние соединения). Если столкнётесь — пожалуйста, откройте issue: это не проверялось на устройстве. |
+| **Туман не рассеивается** | Проверьте разрешение на геолокацию; в *Настройки → Точность GPS* сигналы хуже порога игнорируются; вы можете находиться в *исключённой зоне* (баннер). |
+| **Компас не работает** | На iOS нужно нажать «Разрешить» в шторке «Компас» (жест пользователя обязателен). На эмуляторах датчика нет. |
+| **Не читается карта на iOS** | WKWebView отдаёт файлы по схеме `capacitor://`; PMTiles требует HTTP Range. Если тайлы не грузятся из встроенного файла — импортируйте карту через приложение (читается как `File`, без HTTP). |
+| **`vite: not found` / ошибки сборки** | Node ≥ 20, повторите `npm install`. |
+| **`Gradle: SDK location not found`** | Задайте `ANDROID_HOME` или создайте `android/local.properties` с `sdk.dir=/путь/к/Android/Sdk`. |
+| **Ошибка TLS при `npm run assets:fonts` за прокси** | `NODE_USE_ENV_PROXY=1 NODE_EXTRA_CA_CERTS=/путь/к/ca.pem npm run assets:fonts`. |
+| **Фото/видео не открывают камеру на Android** | Убедитесь, что в манифесте есть `CAMERA` и `RECORD_AUDIO` (добавляет `configure-native.mjs`) и разрешения выданы в настройках приложения. |
+| **Сброс прогресса после переустановки** | Данные лежат в памяти приложения. Делайте резервные копии: *Профиль → Данные и копии*. |

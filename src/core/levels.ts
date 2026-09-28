@@ -7,7 +7,7 @@ import type { Stats } from './challenges';
 
 export const MAX_LEVEL = 60;
 
-export const XP_PER_CELL = 2; // за каждую открытую ячейку (~3000 м²)
+export const M2_PER_XP = 1500; // 1 XP за каждые 1500 м² открытой карты
 export const XP_PER_NOTE = 25;
 export const XP_PER_PHOTO = 5;
 export const XP_PER_VIDEO = 10;
@@ -65,9 +65,9 @@ export function levelFromXp(xp: number): LevelInfo {
 }
 
 /** XP за «сырую» активность (без наград за челленджи). */
-export function baseXp(s: Pick<Stats, 'cells' | 'notes' | 'photos' | 'videos' | 'distanceM'>): number {
+export function baseXp(s: Pick<Stats, 'areaM2' | 'notes' | 'photos' | 'videos' | 'distanceM'>): number {
   return (
-    s.cells * XP_PER_CELL +
+    Math.floor(s.areaM2 / M2_PER_XP) +
     s.notes * XP_PER_NOTE +
     s.photos * XP_PER_PHOTO +
     s.videos * XP_PER_VIDEO +

@@ -1,0 +1,5 @@
+osmium>=4.0
+shapely>=2.0
+mapbox-vector-tile>=2.0
+pmtiles>=3.0
+numpy>=1.24

@@ -59,16 +59,20 @@ class Engine {
   private dirtyTracks = new Set<string>();
   private revealListeners = new Set<RevealListener>();
   private prevLevel = 1;
-  private initialised = false;
   private publishQueued = false;
   /** true — не показывать уведомления и «левел-ап» (пакетные операции: демо, импорт). */
   quiet = false;
 
   // ------------------------------------------------------------------ init
 
-  async init(): Promise<void> {
-    if (this.initialised) return;
-    this.initialised = true;
+  private initPromise: Promise<void> | null = null;
+
+  /** Идемпотентно: повторные вызовы дожидаются той же загрузки. */
+  init(): Promise<void> {
+    return (this.initPromise ??= this.doInit());
+  }
+
+  private async doInit(): Promise<void> {
     const [chunks, days, notes, tracks] = await Promise.all([loadFogChunks(), getAllDays(), getAllNotes(), getAllTracks()]);
     for (const c of chunks) this.grid.loadChunk(c.key, c.cells);
     for (const d of days) this.days.set(d.date, d);

@@ -16,6 +16,18 @@ type P = [number, number];
 const ROUTE = route as P[];
 const DAY = 86400000;
 
+const EN: Record<string, [string, string]> = {
+  'Порт Эркюль': ['Port Hercule', 'Morning at the harbour: yachts, silence and the smell of coffee. The best view is from the quay by the Yacht Club.'],
+  'Казино Монте-Карло': ['Monte-Carlo Casino', 'The facade is lit with a warm glow in the evening. Jacket required inside — tested the hard way.'],
+  'Сады Сен-Мартен': ['Saint-Martin Gardens', 'Paths above the sea and benches in the shade. A perfect place for a break.'],
+  'Смотровая у дворца': ['Palace viewpoint', 'The whole bay is right in front of you. Come at sunset!'],
+  'Кафе у пляжа Ларвотто': ['Café by Larvotto beach', 'A croissant and cappuccino with a view of the waves. Monaco prices, of course.'],
+  'Вокзал Монако': ['Monaco station', 'Trains to Nice every 15 minutes. The exit to the harbour is on the left, via the lift.'],
+  'Отель в Фонвьей': ['Hotel in Fontvieille', 'A quiet area with a rooftop pool. Book ahead.'],
+  'Крутая лестница': ['Steep stairs', 'The steps are slippery after rain. Hold the handrail.'],
+  'Вернуться на закате': ['Come back at sunset', 'Bring a tripod and shoot a timelapse over the bay.'],
+};
+
 const LANDMARKS: { at: P; cat: string; title: string; text: string; scene: Scene; hour: number }[] = [
   { at: [7.4227, 43.7355], cat: 'sight', title: 'Порт Эркюль', text: 'Утро в порту: яхты, тишина и запах кофе. Лучший вид — с набережной у Yacht Club.', scene: 'harbor', hour: 10 },
   { at: [7.4276, 43.7397], cat: 'sight', title: 'Казино Монте-Карло', text: 'Фасад вечером подсвечивают тёплым светом. Внутрь только в пиджаке — проверили на себе.', scene: 'casino', hour: 19 },
@@ -252,7 +264,10 @@ export async function seedDemo(): Promise<void> {
   // заметки в реальных местах маршрута
   const vid = await makeVideo();
   let k = 0;
-  for (const lm of LANDMARKS) {
+  const en = usePrefs.getState().lang === 'en';
+  for (const lm0 of LANDMARKS) {
+    const tr = en ? EN[lm0.title] : undefined;
+    const lm = tr ? { ...lm0, title: tr[0], text: tr[1] } : lm0;
     const i = nearestIndex(lm.at);
     const day = Math.max(0, [12, 10, 9, 7, 5, 3, 2, 1, 0][k % 9]);
     const t = new Date(now - day * DAY);
@@ -310,3 +325,8 @@ export async function seedDemo(): Promise<void> {
 
 const tom = { engine, useApp, usePrefs, seedDemo, route: ROUTE };
 (window as unknown as { __tom: typeof tom }).__tom = tom;
+
+// http://localhost:5173/?demo — сразу загрузить демо-данные
+if (new URLSearchParams(location.search).has('demo')) {
+  void engine.init().then(() => seedDemo());
+}

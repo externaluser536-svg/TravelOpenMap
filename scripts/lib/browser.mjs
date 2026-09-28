@@ -26,6 +26,7 @@ export async function launch() {
       '--ignore-gpu-blocklist',
       '--enable-webgl',
       '--no-sandbox',
+      ...(process.env.TOM_BLOCK_EXTERNAL ? ['--host-resolver-rules=MAP * ~NOTFOUND , EXCLUDE 127.0.0.1 , EXCLUDE localhost'] : []),
       '--disable-dev-shm-usage',
     ],
   });

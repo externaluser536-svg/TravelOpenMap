@@ -26,21 +26,22 @@ const PULSE_MS = 1100;
 const FOG_RGB = { dark: '3,6,14', light: '14,22,42' };
 
 /** Сглаженный порог по альфе маски: чёткая, но не «лесенкой» граница тумана. */
-const EDGE_LUT = (() => {
+function makeLut(a: number, b: number): Uint8ClampedArray {
   const lut = new Uint8ClampedArray(256);
-  const a = 0.3;
-  const b = 0.7;
   for (let i = 0; i < 256; i++) {
     const t = Math.min(1, Math.max(0, (i / 255 - a) / (b - a)));
     lut[i] = Math.round(255 * t * t * (3 - 2 * t));
   }
   return lut;
-})();
+}
+const EDGE_LUT = makeLut(0.3, 0.7); // ближний план: кисти
+const EDGE_LUT_FAR = makeLut(0.08, 0.42); // дальний план: тонкие тропы не должны рваться
 
 function makeBrush(): HTMLCanvasElement {
   const c = document.createElement('canvas');
   c.width = c.height = 64;
-  const g = c.getContext('2d')!;
+  // Программный (CPU) канвас: маска тоже CPU-канвас, и копирование между ними обходится без GPU-readback.
+  const g = c.getContext('2d', { willReadFrequently: true })!;
   const grad = g.createRadialGradient(32, 32, 0, 32, 32, 32);
   grad.addColorStop(0, 'rgba(255,255,255,1)');
   grad.addColorStop(0.5, 'rgba(255,255,255,1)');
@@ -101,7 +102,9 @@ export class FogRenderer {
   private zctx = this.zone.getContext('2d')!;
   private mask = document.createElement('canvas');
   private glow = document.createElement('canvas');
+  private half = document.createElement('canvas');
   private gctx = this.glow.getContext('2d')!;
+  private hctx = this.half.getContext('2d', { willReadFrequently: true })!;
   private mctx = this.mask.getContext('2d', { willReadFrequently: true })!;
   private brush = makeBrush();
   private cloud = makeCloud();
@@ -163,6 +166,8 @@ export class FogRenderer {
       this.fog.height = Math.round(h);
       this.mask.width = Math.max(1, Math.round(w * MASK_SCALE));
       this.mask.height = Math.max(1, Math.round(h * MASK_SCALE));
+      this.half.width = Math.max(1, Math.round(w * MASK_SCALE * 0.5));
+      this.half.height = Math.max(1, Math.round(h * MASK_SCALE * 0.5));
       this.glow.width = Math.max(1, Math.round(w / 9));
       this.glow.height = Math.max(1, Math.round(h / 9));
     }
@@ -171,6 +176,21 @@ export class FogRenderer {
       this.zone.height = Math.round(h * dpr);
     }
     return dpr;
+  }
+
+  /** Порог по альфе маски → плавная, но чёткая граница тумана. */
+  private applyEdge(ctx: CanvasRenderingContext2D, w: number, h: number, lut: Uint8ClampedArray): void {
+    const img = ctx.getImageData(0, 0, w, h);
+    const px = img.data;
+    for (let i = 3; i < px.length; i += 4) px[i] = lut[px[i]];
+    ctx.putImageData(img, 0, 0);
+  }
+
+  /** Только для замеров производительности (dev/demo). */
+  drawNow(): number {
+    const t0 = performance.now();
+    this.draw();
+    return performance.now() - t0;
   }
 
   private draw(): void {
@@ -242,27 +262,37 @@ export class FogRenderer {
 
     const now = performance.now();
     const cellsW = (maxX - minX) * (maxY - minY);
-    const pixelMode = cellPx * MASK_SCALE < 2.2 || cellsW > 60000;
+    const pixelMode = cellPx < 9 || cellsW > 60000;
     const toWorld = worldSize / CELLS_PER_AXIS;
     const expired: number[] = [];
 
     if (pixelMode) {
+      // Дальний план: каждая ячейка — блок пикселей маски (быстро, без вызовов drawImage).
       const img = mctx.createImageData(mw, mh);
       const buf = new Uint32Array(img.data.buffer);
       const solid = 0xffffffff;
-      const size = cellPx * MASK_SCALE >= 1.2 ? 2 : 1;
+      const size = Math.max(2, Math.round(cellPx * MASK_SCALE));
+      const off = size >> 1;
       this.grid.forEachInRect(minX, minY, maxX, maxY, (x, y) => {
-        const px = Math.round(sx((x + 0.5) * toWorld, (y + 0.5) * toWorld) * MASK_SCALE);
-        const py = Math.round(sy((x + 0.5) * toWorld, (y + 0.5) * toWorld) * MASK_SCALE);
+        const px = Math.round(sx((x + 0.5) * toWorld, (y + 0.5) * toWorld) * MASK_SCALE) - off;
+        const py = Math.round(sy((x + 0.5) * toWorld, (y + 0.5) * toWorld) * MASK_SCALE) - off;
         for (let dy = 0; dy < size; dy++) {
+          const Y = py + dy;
+          if (Y < 0 || Y >= mh) continue;
           for (let dx = 0; dx < size; dx++) {
             const X = px + dx;
-            const Y = py + dy;
-            if (X >= 0 && X < mw && Y >= 0 && Y < mh) buf[Y * mw + X] = solid;
+            if (X >= 0 && X < mw) buf[Y * mw + X] = solid;
           }
         }
       });
       mctx.putImageData(img, 0, 0);
+      // размытие «вниз-вверх» + порог: гладкий контур вместо лесенки
+      const hc = this.hctx;
+      hc.clearRect(0, 0, this.half.width, this.half.height);
+      hc.drawImage(this.mask, 0, 0, mw, mh, 0, 0, this.half.width, this.half.height);
+      mctx.clearRect(0, 0, mw, mh);
+      mctx.drawImage(this.half, 0, 0, this.half.width, this.half.height, 0, 0, mw, mh);
+      this.applyEdge(mctx, mw, mh, EDGE_LUT_FAR);
     } else {
       const r = cellPx * 1.12;
       const d = r * 2 * MASK_SCALE;
@@ -283,11 +313,7 @@ export class FogRenderer {
         mctx.drawImage(this.brush, (cx - r) * MASK_SCALE, (cy - r) * MASK_SCALE, d, d);
       });
       mctx.globalAlpha = 1;
-      // порог по альфе → плавная, но чёткая граница
-      const img = mctx.getImageData(0, 0, mw, mh);
-      const px = img.data;
-      for (let i = 3; i < px.length; i += 4) px[i] = EDGE_LUT[px[i]];
-      mctx.putImageData(img, 0, 0);
+      this.applyEdge(mctx, mw, mh, EDGE_LUT);
     }
     for (const k of expired) this.pulses.delete(k);
 

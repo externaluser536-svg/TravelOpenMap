@@ -48,16 +48,16 @@ describe('fog grid', () => {
   it('ячейка ↔ координаты', () => {
     const c = cellOf(monaco);
     const back = cellCenter(c.x, c.y);
-    expect(Math.abs(back.lng - monaco.lng)).toBeLessThan(0.0006);
-    expect(Math.abs(back.lat - monaco.lat)).toBeLessThan(0.0005);
+    expect(Math.abs(back.lng - monaco.lng)).toBeLessThan(0.0004);
+    expect(Math.abs(back.lat - monaco.lat)).toBeLessThan(0.0003);
     expect(keyX(cellKey(c.x, c.y))).toBe(c.x);
     expect(keyY(cellKey(c.x, c.y))).toBe(c.y);
-    expect(CELL_ZOOM).toBe(19);
+    expect(CELL_ZOOM).toBe(20);
   });
-  it('размер ячейки ~55 м в Монако и ~76 м на экваторе', () => {
-    expect(cellSizeMeters(cellOf(monaco).y)).toBeGreaterThan(53);
-    expect(cellSizeMeters(cellOf(monaco).y)).toBeLessThan(57);
-    expect(cellSizeMeters(cellOf({ lng: 0, lat: 0 }).y)).toBeGreaterThan(75);
+  it('размер ячейки ~27 м в Монако и ~38 м на экваторе', () => {
+    expect(cellSizeMeters(cellOf(monaco).y)).toBeGreaterThan(26);
+    expect(cellSizeMeters(cellOf(monaco).y)).toBeLessThan(28.5);
+    expect(cellSizeMeters(cellOf({ lng: 0, lat: 0 }).y)).toBeGreaterThan(37);
     expect(cellArea(cellOf(monaco).y)).toBeCloseTo(cellSizeMeters(cellOf(monaco).y) ** 2, 6);
   });
   it('reveal открывает круг, площадь ≈ π r²', () => {
@@ -139,7 +139,7 @@ describe('уровни', () => {
     expect(levelFromXp(1e9).level).toBe(MAX_LEVEL);
   });
   it('baseXp', () => {
-    expect(baseXp({ cells: 10, notes: 2, photos: 3, videos: 1, distanceM: 500 })).toBe(20 + 50 + 15 + 10 + 10);
+    expect(baseXp({ areaM2: 30000, notes: 2, photos: 3, videos: 1, distanceM: 500 })).toBe(20 + 50 + 15 + 10 + 10);
   });
 });
 
