@@ -1,0 +1,5 @@
+{
+  "maps": [
+    { "id": "bundled:monaco", "name": "Монако / Monaco (demo)", "file": "monaco.pmtiles" }
+  ]
+}
