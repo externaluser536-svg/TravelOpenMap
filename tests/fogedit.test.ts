@@ -1,7 +1,7 @@
 import 'fake-indexeddb/auto';
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { CELLS_PER_AXIS, FogGrid, cellOf, keyX, keyY, cellArea } from '../src/core/fog';
-import { FogEditTooLargeError, cellsInCircle, cellsInPolygon, circlePolygon, polygonAreaM2 } from '../src/core/fogedit';
+import { FogEditTooLargeError, cellsInCircle, cellsInPath, cellsInPolygon, circlePolygon, polygonAreaM2 } from '../src/core/fogedit';
 import { destination } from '../src/core/geo';
 
 const mem = new Map<string, string>();
@@ -55,6 +55,21 @@ describe('выбор ячеек', () => {
     const inBody = cellOf(p(-100, 0));
     expect(keys.has(inHole.x * CELLS_PER_AXIS + inHole.y)).toBe(false);
     expect(keys.has(inBody.x * CELLS_PER_AXIS + inBody.y)).toBe(true);
+  });
+
+  it('мазок кисти: одна точка — круг, линия — «сосиска» шириной 2r без дублей', () => {
+    expect(new Set(cellsInPath([monaco], 120))).toEqual(new Set(cellsInCircle(monaco, 120)));
+    const end = destination(monaco, 90, 2000); // ячейка ≈ 27 м, поэтому берём крупный мазок
+    const keys = cellsInPath([monaco, end], 250);
+    expect(new Set(keys).size).toBe(keys.length);
+    const area = keys.reduce((s, k) => s + cellArea(keyY(k)), 0);
+    const expected = 2 * 250 * 2000 + Math.PI * 250 * 250;
+    expect(area / expected).toBeGreaterThan(0.95);
+    expect(area / expected).toBeLessThan(1.05);
+    // точка вдали от линии не попадает
+    const far = cellsInCircle(destination(monaco, 0, 600), 5)[0];
+    expect(keys).not.toContain(far);
+    expect(cellsInPath([], 50)).toEqual([]);
   });
 
   it('слишком большая область отклоняется', () => {
@@ -144,6 +159,36 @@ describe('движок: ручная правка тумана', () => {
     expect(engine.grid.count).toBe(opened);
     expect(Object.keys(usePrefs.getState().completed).length).toBeGreaterThanOrEqual(doneBefore);
     for (const k of cellsInCircle(monaco, 50)) expect(engine.grid.has(keyX(k), keyY(k))).toBe(true);
+  });
+
+  it('отмена и возврат работают много раз подряд', () => {
+    engine.editFog('open', cellsInCircle(monaco, 200));
+    const a = engine.grid.count;
+    engine.editFog('open', cellsInCircle(destination(monaco, 90, 500), 200));
+    const b = engine.grid.count;
+    engine.editFog('close', cellsInCircle(monaco, 80));
+    const c = engine.grid.count;
+    expect(engine.canUndoFogEdit).toBe(true);
+    expect(engine.canRedoFogEdit).toBe(false);
+    engine.undoFogEdit();
+    expect(engine.grid.count).toBe(b);
+    engine.undoFogEdit();
+    expect(engine.grid.count).toBe(a);
+    expect(engine.canRedoFogEdit).toBe(true);
+    engine.redoFogEdit();
+    expect(engine.grid.count).toBe(b);
+    engine.redoFogEdit();
+    expect(engine.grid.count).toBe(c);
+    expect(engine.canRedoFogEdit).toBe(false);
+    // новая правка обнуляет «вперёд»
+    engine.undoFogEdit();
+    engine.editFog('open', cellsInCircle(destination(monaco, 0, 700), 50));
+    expect(engine.canRedoFogEdit).toBe(false);
+    engine.undoFogEdit();
+    engine.undoFogEdit();
+    engine.undoFogEdit();
+    expect(engine.grid.count).toBe(0);
+    expect(engine.canUndoFogEdit).toBe(false);
   });
 
   it('правка сохраняется в БД и переживает перезагрузку', async () => {

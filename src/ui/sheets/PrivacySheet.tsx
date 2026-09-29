@@ -4,7 +4,7 @@ import { useT } from '../../i18n';
 import { Icon } from '../icons';
 import { Row, Sheet } from '../common';
 import { usePrefs } from '../../state/prefs';
-import { gatewayLog } from '../../map/gateway-client';
+import { ONLINE_HOSTS } from '../../map/online';
 
 /** Считает сетевые запросы, ушедшие за пределы приложения (по Resource Timing). */
 export function externalRequests(): string[] {
@@ -35,7 +35,8 @@ export function PrivacySheet() {
     return () => clearInterval(id);
   }, []);
   const ok = ext.length === 0;
-  const allow = usePrefs((s) => s.allowDownloads);
+  const online = usePrefs((s) => s.onlineMaps);
+  const hosts = [...new Set(ext.map((u) => { try { return new URL(u).host; } catch { return u; } }))];
   return (
     <Sheet title={t('privacy.title')} onClose={() => patch({ sheet: null })}>
       <div className="form">
@@ -49,18 +50,18 @@ export function PrivacySheet() {
         </div>
         {!ok && (
           <div className="card">
-            {ext.slice(0, 6).map((u) => (
-              <small key={u} className="mono">
-                {u}
+            {hosts.map((h) => (
+              <small key={h} className="mono">
+                {h}
               </small>
             ))}
           </div>
         )}
         <div className="card list">
           <Row
-            icon={allow ? 'globe' : 'shield-check'}
-            title={allow ? t('privacy.gateway_on') : t('privacy.gateway_off')}
-            sub={allow ? `${t('privacy.gateway_on_sub')} ${gatewayLog.calls ? `· ${t('privacy.gateway_calls', { n: gatewayLog.calls, hosts: [...gatewayLog.hosts].join(', ') || '—' })}` : ''}` : t('privacy.gateway_off_sub')}
+            icon={online ? 'globe' : 'shield-check'}
+            title={online ? t('privacy.online_on') : t('privacy.online_off')}
+            sub={online ? t('privacy.online_on_sub', { hosts: ONLINE_HOSTS.join(', ') }) : t('privacy.online_off_sub')}
           />
           <Row icon="wifi-off" title={t('privacy.offline')} sub={t('privacy.offline_sub')} />
           <Row icon="database" title={t('privacy.local')} sub={t('privacy.local_sub')} />

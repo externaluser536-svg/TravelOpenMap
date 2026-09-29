@@ -2,21 +2,21 @@
 // Чистая логика — без сети и DOM.
 
 import { COUNTRIES, DETAIL_PRESETS, countryName, type Country, type DetailId } from '../data/countries';
-import { estimateBytes } from '../map/extract';
-import { latToY, lngToX, xToLng, yToLat, type Lang } from './geo';
+import { countTiles, estimateBytes, tileOf, type Box } from './tiles';
+import { xToLng, yToLat, type Lang } from './geo';
 
-export type Box = [number, number, number, number];
+export type { Box };
 
 /** Обзорная карта мира: все страны и крупные города, без улиц. */
 export const WORLD_BBOX: Box = [-180, -85.0511, 180, 85.0511];
 export const WORLD_MAX_ZOOM = 5;
+/** Больше тайлов за одну загрузку не берём (совпадает с лимитом сохранения области). */
+export const MAX_PLAN_TILES = 80000;
 
 /** С этого приближения предлагаем карту области. */
 export const PROMPT_MIN_ZOOM = 7;
-/** Карта считается детальной для точки, если её maxzoom не меньше этого. */
-export const DETAIL_MIN_MAXZOOM = 9;
-/** Потолок размера одной загрузки, байт (совпадает с лимитом шлюза). */
-export const MAX_AREA_BYTES = 300 * 1024 * 1024;
+/** Потолок размера одной загрузки, байт. */
+export const MAX_AREA_BYTES = 250 * 1024 * 1024;
 /** Сторона «области» для больших стран — тайл этого уровня. */
 export const AREA_TILE_ZOOM = 8;
 
@@ -31,15 +31,6 @@ export function countryAt(lng: number, lat: number): Country | undefined {
     if (!best || boxArea(c.bbox) < boxArea(best.bbox)) best = c;
   }
   return best;
-}
-
-/** Есть ли среди установленных карт достаточно детальная для этой точки. */
-export function hasDetail(maps: readonly { bounds: Box; maxzoom: number }[], lng: number, lat: number, minMaxZoom = DETAIL_MIN_MAXZOOM): boolean {
-  return maps.some((m) => m.maxzoom >= minMaxZoom && contains(m.bounds, lng, lat));
-}
-
-export function hasWorld(maps: readonly { bounds: Box }[]): boolean {
-  return maps.some((m) => m.bounds[2] - m.bounds[0] > 300);
 }
 
 /** Рамка тайла (x, y) на уровне z в градусах. */
@@ -73,16 +64,15 @@ export function planArea(lng: number, lat: number, zoom: number): AreaPlan | nul
   const wanted: DetailId = zoom >= 11 ? 'street' : 'city';
   const order: DetailId[] = wanted === 'street' ? ['street', 'city', 'overview'] : ['city', 'overview'];
 
-  const n = 2 ** AREA_TILE_ZOOM;
-  const tx = Math.min(n - 1, Math.max(0, Math.floor(lngToX(lng) * n)));
-  const ty = Math.min(n - 1, Math.max(0, Math.floor(latToY(lat) * n)));
+  const { x: tx, y: ty } = tileOf(lng, lat, AREA_TILE_ZOOM);
   const tile = tileBounds(AREA_TILE_ZOOM, tx, ty);
+  const fits = (b: Box, z: number) => countTiles(b, 0, z) <= MAX_PLAN_TILES;
   // Желаемая детализация важнее охвата: сначала страна целиком, потом область — на той же детализации, и лишь затем грубее.
   for (const d of order) {
     const wholeEst = estimateBytes(country.bbox, 0, detailZoom(d));
-    if (wholeEst <= MAX_AREA_BYTES) return { key: `country:${country.code}`, country, whole: true, bbox: country.bbox, maxZoom: detailZoom(d), detail: d, estimate: wholeEst };
+    if (wholeEst <= MAX_AREA_BYTES && fits(country.bbox, detailZoom(d))) return { key: `country:${country.code}`, country, whole: true, bbox: country.bbox, maxZoom: detailZoom(d), detail: d, estimate: wholeEst };
     const areaEst = estimateBytes(tile, 0, detailZoom(d));
-    if (areaEst <= MAX_AREA_BYTES) return { key: `area:${AREA_TILE_ZOOM}/${tx}/${ty}`, country, whole: false, bbox: tile, maxZoom: detailZoom(d), detail: d, estimate: areaEst };
+    if (areaEst <= MAX_AREA_BYTES && fits(tile, detailZoom(d))) return { key: `area:${AREA_TILE_ZOOM}/${tx}/${ty}`, country, whole: false, bbox: tile, maxZoom: detailZoom(d), detail: d, estimate: areaEst };
   }
   return null;
 }

@@ -8,7 +8,7 @@ import type { LngLat } from '../core/geo';
 import type { Note, Trip, Workout, WorkoutType } from '../data/db';
 import type { DayLog } from '../core/days';
 import type { LiveStats } from '../core/workout';
-import type { Progress } from '../map/gateway-client';
+import type { AreaProgress as Progress } from '../map/offline-areas';
 import type { MapInfo } from '../map/pmtiles';
 
 export type Screen = 'map' | 'notes' | 'workout' | 'profile';
@@ -40,7 +40,8 @@ export type Sheet =
   | { type: 'workout'; id: string }
   | { type: 'trip'; id: string }
   | { type: 'tripEditor' }
-  | { type: 'cluster'; ids: string[] };
+  | { type: 'cluster'; ids: string[] }
+  | { type: 'layers' };
 
 export interface DraftMedia {
   key: string;
@@ -78,11 +79,16 @@ export interface ZoneDraft {
 /** Черновик ручной правки тумана. circle — центр в перекрестии и радиус; area — многоугольник по касаниям. */
 export interface FogDraft {
   action: 'open' | 'close';
-  tool: 'circle' | 'area';
+  tool: 'brush' | 'circle' | 'area';
   lng: number;
   lat: number;
+  /** радиус круга, м */
   radius: number;
   poly: LngLat[];
+  /** радиус кисти в пикселях экрана (одинаков на любом масштабе) */
+  brushPx: number;
+  /** режим «двигать карту» вместо рисования (для кисти) */
+  pan: boolean;
 }
 
 /** Меню долгого нажатия на карте. */
@@ -94,7 +100,7 @@ export interface MapMenu {
   y: number;
 }
 
-/** Что именно скачиваем: обзор мира, страна или область. */
+/** Что сохраняем для офлайна: обзор мира, страна или область. */
 export interface DownloadJob {
   /** ключ: WORLD, код страны или area:z/x/y */
   id: string;
@@ -103,18 +109,21 @@ export interface DownloadJob {
   flag?: string;
   bbox: [number, number, number, number];
   maxZoom: number;
-  /** код страны для каталога (WORLD для обзора) */
-  country: string;
+  /** сохранять ли рельеф для слоя «Высоты» */
+  dem: boolean;
   /** оценка размера, байт */
   estimate: number;
-  /** после загрузки перейти к этой карте */
-  activate: boolean;
+  /** после сохранения перейти к этой области */
+  fly: boolean;
 }
 
-/** Запрос к пользователю перед загрузкой карты. */
+/** Вопрос к пользователю о сети и картах. */
 export type DownloadPrompt =
-  | { kind: 'world'; job: DownloadJob }
+  /** после знакомства: включить онлайн-карту? */
+  | { kind: 'online' }
+  /** перед сохранением области, пока онлайн-карта выключена */
   | { kind: 'consent'; job: DownloadJob }
+  /** при приближении к области, которой нет в сохранённых */
   | { kind: 'area'; job: DownloadJob; title: string; dismissKey: string };
 
 export interface DownloadState {
@@ -184,7 +193,10 @@ export interface AppState {
   zoneDraft: ZoneDraft | null;
   fogDraft: FogDraft | null;
   downloadPrompt: DownloadPrompt | null;
+  /** интерактивное обучение: номер шага или null, если не идёт */
+  tour: { step: number } | null;
   canUndoFog: boolean;
+  canRedoFog: boolean;
   mapMenu: MapMenu | null;
 
   toasts: Toast[];
@@ -247,7 +259,9 @@ export const useApp = create<AppState>((set, get) => ({
   zoneDraft: null,
   fogDraft: null,
   downloadPrompt: null,
+  tour: null,
   canUndoFog: false,
+  canRedoFog: false,
   mapMenu: null,
 
   toasts: [],

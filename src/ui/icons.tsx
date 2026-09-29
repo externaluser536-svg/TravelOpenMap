@@ -5,7 +5,7 @@ import {
   Landmark, Languages, Layers, Library, Lightbulb, LocateFixed, LocateOff, Map, MapPin, MapPinned, Medal, Moon, Mountain,
   Navigation, Notebook, Palette, Pencil, Play, Plus, Rocket, Route, Ruler, Search, Settings, Share2, Shield, ShieldCheck, Sparkles,
   Square, Sun, Sunrise, Target, Telescope, Trash2, Trees, Trophy, Train, TriangleAlert, Undo2, Upload, User, Utensils, Video, Wifi,
-  WifiOff, Wind, X, Zap, Ban, Image, Film, ListChecks, Vibrate, PartyPopper, Star, Tag, Smartphone, Brush, CloudOff, MapPinPlus,
+  WifiOff, Wind, X, Zap, Ban, Image, Film, ListChecks, Vibrate, PartyPopper, Star, Tag, Smartphone, Brush, CloudOff, MapPinPlus, Redo2, Hand, Eraser, Pentagon,
 } from 'lucide-react';
 import type { ComponentType, SVGProps } from 'react';
 
@@ -24,7 +24,7 @@ const ICONS: Record<string, IconC> = {
   telescope: Telescope, trash: Trash2, trees: Trees, trophy: Trophy, train: Train, 'triangle-alert': TriangleAlert, undo: Undo2,
   upload: Upload, user: User, utensils: Utensils, video: Video, wifi: Wifi, 'wifi-off': WifiOff, x: X, zap: Zap, ban: Ban,
   'table': Table2, 'plane': Plane, 'calendar-days': CalendarDays, 'wallet': Wallet, 'timer': Timer, 'pause': Pause, 'flag': Flag, 'bike': Bike, 'luggage': Luggage, 'copy': Copy, 'trend-up': TrendingUp, 'trend-down': TrendingDown, 'minus': Minus, 'ship': Ship, 'bus': Bus, 'car': Car, 'train-front': TrainFront, 'users': Users, 'heart': Heart, 'circle-check': CircleCheck, 'backpack': Backpack, 'coins': Coins, 'person': PersonStanding, 'file': FileText, 'refresh': RefreshCw, 'link': Link, 'check-all': CheckCheck, 'hourglass': Hourglass, 'circle': Circle,
-  wind: Wind, image: Image, film: Film, list: ListChecks, vibrate: Vibrate, party: PartyPopper, star: Star, tag: Tag, phone: Smartphone, brush: Brush, 'cloud-off': CloudOff, 'pin-plus': MapPinPlus,
+  wind: Wind, image: Image, film: Film, list: ListChecks, vibrate: Vibrate, party: PartyPopper, star: Star, tag: Tag, phone: Smartphone, brush: Brush, 'cloud-off': CloudOff, 'pin-plus': MapPinPlus, redo: Redo2, hand: Hand, eraser: Eraser, polygon: Pentagon,
 };
 
 export function Icon({ name, size = 20, strokeWidth = 2, ...rest }: { name: string; size?: number; strokeWidth?: number } & Omit<SVGProps<SVGSVGElement>, 'name'>) {

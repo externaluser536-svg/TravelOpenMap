@@ -27,6 +27,7 @@ import { ZonesSheet } from './ui/sheets/ZonesSheet';
 import { DataSheet } from './ui/sheets/DataSheet';
 import { PrivacySheet } from './ui/sheets/PrivacySheet';
 import { ClusterSheet } from './ui/sheets/ClusterSheet';
+import { LayersSheet } from './ui/sheets/LayersSheet';
 import { LevelUp, Onboarding, Toasts } from './ui/Overlays';
 import { startLocation } from './services/location';
 import { startCompass } from './services/compass';
@@ -123,6 +124,7 @@ export default function App() {
       {sheet?.type === 'trip' && <TripSheet id={sheet.id} />}
       {sheet?.type === 'tripEditor' && <TripEditorSheet />}
       {sheet?.type === 'cluster' && <ClusterSheet ids={sheet.ids} />}
+      {sheet?.type === 'layers' && <LayersSheet />}
       {screen !== 'map' && screen !== 'workout' && <WorkoutMini />}
       <Toasts />
       <LevelUp />

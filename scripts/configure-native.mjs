@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * Идемпотентно настраивает нативные проекты Capacitor (android/, ios/) под TravelOpenMap:
- *  • Android: добавляет INTERNET (нужно только для необязательной, выключенной по умолчанию загрузки карт стран —
+ *  • Android: добавляет службу фоновой записи и её разрешения; добавляет INTERNET (нужно только для необязательной, выключенной по умолчанию загрузки карт стран —
  *    основное приложение не делает сетевых запросов, это гарантирует его CSP); флаг --offline-only
  *    убирает INTERNET совсем — тогда ОС сама гарантирует отсутствие сети, а карты добавляются только импортом файлом;
  *    добавляет геолокацию, камеру и микрофон (запись видео);
@@ -29,6 +29,10 @@ if (existsSync(manifest)) {
       : '    <!-- INTERNET намеренно отсутствует (сборка offline-only): приложение работает полностью офлайн, загрузка карт стран недоступна. -->',
     '    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />',
     '    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />',
+    '    <!-- Фоновая запись трека: служба переднего плана с типом location (без сервисов Google Play) -->',
+    '    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />',
+    '    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />',
+    '    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />',
     '    <uses-permission android:name="android.permission.CAMERA" />',
     '    <uses-permission android:name="android.permission.RECORD_AUDIO" />',
     '    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />',
@@ -37,6 +41,13 @@ if (existsSync(manifest)) {
     '    <uses-feature android:name="android.hardware.sensor.compass" android:required="false" />',
   ].join('\n');
   x = x.replace(/\s*<!-- Permissions[\s\S]*?(?=<\/manifest>)/, `\n\n${block}\n`);
+  // служба фоновой записи — внутри <application>
+  if (!x.includes('.TrackingService')) {
+    x = x.replace(
+      '    </application>',
+      '        <!-- Фоновая запись трека -->\n        <service\n            android:name=".TrackingService"\n            android:exported="false"\n            android:foregroundServiceType="location" />\n    </application>',
+    );
+  }
   writeFileSync(manifest, x);
   console.log(`android: разрешения обновлены (INTERNET ${keepInternet ? 'добавлен — для необязательной загрузки карт' : 'удалён — сборка offline-only'})`);
 }

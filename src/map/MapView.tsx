@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { AttributionControl, Map as MlMap, Marker, type GeoJSONSource } from 'maplibre-gl';
+import { AttributionControl, Map as MlMap, Marker, addProtocol, type GeoJSONSource } from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { useApp } from '../state/store';
 import { usePrefs, resolveTheme } from '../state/prefs';
@@ -10,10 +10,13 @@ import { engine } from '../state/engine';
 import { FogRenderer } from './fog-renderer';
 import { NoteClusters, categoryRing, type ClusterItem } from './clusters';
 import { useT } from '../i18n';
-import { buildStyle } from './style';
+import { buildMapStyle, styleKey, type MapStyleState } from './mapstyle';
 import { registerPmtilesProtocol } from './pmtiles';
+import { registerOnlineProtocol } from './online';
+import { setProtocolAdder } from './dem';
 import { categoryById } from '../core/categories';
-import { haversine, pathLength, formatDistance, type LngLat } from '../core/geo';
+import { EQUATOR_M, haversine, pathLength, formatDistance, type LngLat } from '../core/geo';
+import { applyFogStroke } from '../state/actions';
 import { Icon } from '../ui/icons';
 import { tap } from '../services/haptics';
 
@@ -33,6 +36,13 @@ export const mapApi = {
   zoom(): number {
     return this.map?.getZoom() ?? 15;
   },
+  /** мазок кисти тумана, пока палец на экране */
+  stroke: null as LngLat[] | null,
+  /** метров в одном пикселе экрана в точке */
+  metersPerPixel(lat: number): number {
+    const z = this.map?.getZoom() ?? 15;
+    return (EQUATOR_M * Math.cos((lat * Math.PI) / 180)) / (512 * 2 ** z);
+  },
   /** Точка под перекрестием режима правки тумана: выше центра, чтобы её не закрывала нижняя панель. */
   fogPoint(): LngLat | null {
     const m = this.map;
@@ -44,7 +54,8 @@ export const mapApi = {
 };
 
 /** С обзорной картой мира можно отдаляться до континентов, без неё — только до региона. */
-function minZoomFor(sources: readonly { bounds: [number, number, number, number] }[]): number {
+function minZoomFor(sources: readonly { bounds: [number, number, number, number] }[], online = false): number {
+  if (online) return 2;
   return sources.some((s) => s.bounds[2] - s.bounds[0] > 300) ? 2 : 6;
 }
 
@@ -117,6 +128,7 @@ export function MapView() {
   const appReady = useApp((s) => s.ready);
   const zoneDraft = useApp((s) => s.zoneDraft);
   const fogDraft = useApp((s) => s.fogDraft);
+  const mode = useApp((s) => s.mode);
   const mapMenu = useApp((s) => s.mapMenu);
   const fogOpacity = usePrefs((s) => s.fogOpacity);
   const fogWind = usePrefs((s) => s.fogWind);
@@ -125,18 +137,43 @@ export function MapView() {
   const workoutRoute = useApp((s) => s.workoutRoute);
   const zones = usePrefs((s) => s.zones);
   const theme = useResolvedTheme();
+  // карта OpenMapTiles рисуется, если включена онлайн-карта или есть сохранённые области (кэш работает и без сети)
+  const online = usePrefs((s) => s.onlineMaps || s.savedAreas.length > 0);
+  const savedMax = usePrefs((s) => (s.savedAreas.length ? Math.max(...s.savedAreas.map((a) => a.maxZoom)) : 0));
+  const [netUp, setNetUp] = useState(() => typeof navigator === 'undefined' || navigator.onLine !== false);
+  useEffect(() => {
+    const on = () => setNetUp(true);
+    const off = () => setNetUp(false);
+    window.addEventListener('online', on);
+    window.addEventListener('offline', off);
+    return () => {
+      window.removeEventListener('online', on);
+      window.removeEventListener('offline', off);
+    };
+  }, []);
+  const mapLayers = usePrefs((s) => s.mapLayers);
+  // без сети тайлы есть только до сохранённого масштаба — выше карта растягивается, а не пустеет
+  const onlinePref = usePrefs((s) => s.onlineMaps);
+  const omtMaxZoom = onlinePref && netUp ? 14 : Math.min(14, savedMax || 14);
+  const currentStyleState = (): MapStyleState => {
+    const st = useApp.getState();
+    const pf = usePrefs.getState();
+    return { theme, lang, online: pf.onlineMaps || pf.savedAreas.length > 0, layers: pf.mapLayers, sources: st.mapSources.length ? st.mapSources : mapInfo ? [mapInfo] : [], omtMaxZoom };
+  };
 
   // ---------------------------------------------------------------- создание карты
   useEffect(() => {
     if (!ref.current || !mapInfo || mapRef.current) return;
     registerPmtilesProtocol();
+    registerOnlineProtocol(addProtocol as never);
+    setProtocolAdder(addProtocol);
     const pos = useApp.getState().position;
     const map = new MlMap({
       container: ref.current,
-      style: buildStyle({ theme, lang, sources: useApp.getState().mapSources.length ? useApp.getState().mapSources : [mapInfo] }),
+      style: buildMapStyle(currentStyleState()),
       center: pos ? [pos.lng, pos.lat] : mapInfo.center,
       zoom: 15.5,
-      minZoom: minZoomFor(useApp.getState().mapSources),
+      minZoom: minZoomFor(useApp.getState().mapSources, usePrefs.getState().onlineMaps || usePrefs.getState().savedAreas.length > 0),
       maxZoom: 19.5,
       maxPitch: 0,
       attributionControl: false,
@@ -159,6 +196,7 @@ export function MapView() {
         const st = useApp.getState();
         const d = st.fogDraft;
         if (st.mode !== 'fogedit' || !d) return null;
+        if (d.tool === 'brush') return mapApi.stroke ? { kind: 'stroke', action: d.action, points: mapApi.stroke, radiusPx: d.brushPx } : null;
         return d.tool === 'circle'
           ? { kind: 'circle', action: d.action, lng: d.lng, lat: d.lat, radius: d.radius }
           : { kind: 'poly', action: d.action, points: d.poly };
@@ -202,7 +240,7 @@ export function MapView() {
         if (st.mode === 'zone' && st.zoneDraft) st.patch({ zoneDraft: { ...st.zoneDraft, lng: c.lng, lat: c.lat } });
         if (st.mode === 'fogedit' && st.fogDraft?.tool === 'circle') st.patch({ fogDraft: { ...st.fogDraft, lng: fp?.lng ?? c.lng, lat: fp?.lat ?? c.lat } });
         const covering = st.mapSources.length ? st.mapSources : [mapInfo];
-        const missing = !covering.some(({ bounds: [w, s, e, n] }) => c.lng >= w && c.lng <= e && c.lat >= s && c.lat <= n);
+        const missing = !(usePrefs.getState().onlineMaps || usePrefs.getState().savedAreas.length > 0) && !covering.some(({ bounds: [w, s, e, n] }) => c.lng >= w && c.lng <= e && c.lat >= s && c.lat <= n);
         if (missing !== st.mapMissing) st.patch({ mapMissing: missing });
       });
     });
@@ -270,6 +308,61 @@ export function MapView() {
       if (useApp.getState().mapMenu) useApp.getState().patch({ mapMenu: null });
     });
 
+    // ---- кисть тумана: палец рисует, два пальца двигают и масштабируют карту
+    let brushId = -1;
+    let lastPt = { x: 0, y: 0 };
+    const brushOn = () => {
+      const st = useApp.getState();
+      return st.mode === 'fogedit' && st.fogDraft?.tool === 'brush' && !st.fogDraft.pan;
+    };
+    const local = (e: PointerEvent) => {
+      const r = host.getBoundingClientRect();
+      return { x: e.clientX - r.left, y: e.clientY - r.top };
+    };
+    const endStroke = (apply: boolean) => {
+      const pts = mapApi.stroke;
+      mapApi.stroke = null;
+      brushId = -1;
+      const d = useApp.getState().fogDraft;
+      if (apply && pts?.length && d) applyFogStroke(pts, d.brushPx * mapApi.metersPerPixel(pts[0].lat));
+      fog.requestDraw();
+    };
+    const onBrushDown = (e: PointerEvent) => {
+      if (!brushOn()) return;
+      if (!e.isPrimary) {
+        if (brushId >= 0) endStroke(false); // второй палец — это жест карты
+        return;
+      }
+      if (e.pointerType === 'mouse' && e.button !== 0) return;
+      const p = local(e);
+      const ll = map.unproject([p.x, p.y]);
+      brushId = e.pointerId;
+      lastPt = p;
+      mapApi.stroke = [{ lng: ll.lng, lat: ll.lat }];
+      try {
+        host.setPointerCapture(e.pointerId);
+      } catch {
+        /* не критично */
+      }
+      fog.requestDraw();
+    };
+    const onBrushMove = (e: PointerEvent) => {
+      if (e.pointerId !== brushId || !mapApi.stroke) return;
+      const p = local(e);
+      if (Math.hypot(p.x - lastPt.x, p.y - lastPt.y) < 3) return;
+      lastPt = p;
+      const ll = map.unproject([p.x, p.y]);
+      mapApi.stroke.push({ lng: ll.lng, lat: ll.lat });
+      fog.requestDraw();
+    };
+    const onBrushUp = (e: PointerEvent) => {
+      if (e.pointerId === brushId) endStroke(e.type === 'pointerup');
+    };
+    host.addEventListener('pointerdown', onBrushDown);
+    host.addEventListener('pointermove', onBrushMove);
+    host.addEventListener('pointerup', onBrushUp);
+    host.addEventListener('pointercancel', onBrushUp);
+
     // ---- группировка меток: пересчёт при смене целого zoom и по окончании движения
     let lastZ = -1;
     map.on('zoom', () => {
@@ -304,6 +397,10 @@ export function MapView() {
       host.removeEventListener('pointerup', cancelPress);
       host.removeEventListener('pointercancel', cancelPress);
       host.removeEventListener('contextmenu', onCtx);
+      host.removeEventListener('pointerdown', onBrushDown);
+      host.removeEventListener('pointermove', onBrushMove);
+      host.removeEventListener('pointerup', onBrushUp);
+      host.removeEventListener('pointercancel', onBrushUp);
       pinsRef.current.clear();
       offReveal();
       fog.destroy();
@@ -317,23 +414,24 @@ export function MapView() {
 
   // ---------------------------------------------------------------- смена темы / языка / набора карт
   const mapSources = useApp((s) => s.mapSources);
-  const sourcesKey = mapSources.map((m) => `${m.id}:${m.maxzoom}`).join('|');
   const appliedStyle = useRef('');
+  const layersKey = `${+mapLayers.subway}${+mapLayers.outdoors}${+mapLayers.elevation}`;
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !mapInfo) return;
-    const key = `${theme}/${lang}/${sourcesKey}`;
+    const state = currentStyleState();
+    const key = styleKey(state);
     if (!appliedStyle.current) {
-      // стиль при создании карты уже собран из текущего набора
+      // стиль при создании карты уже собран из текущего состояния
       appliedStyle.current = key;
       return;
     }
     if (appliedStyle.current === key) return;
     appliedStyle.current = key;
-    map.setStyle(buildStyle({ theme, lang, sources: mapSources.length ? mapSources : [mapInfo] }), { diff: false });
-    map.setMinZoom(minZoomFor(mapSources));
+    map.setStyle(buildMapStyle(state), { diff: false });
+    map.setMinZoom(minZoomFor(state.sources, state.online));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [theme, lang, sourcesKey, !!mapInfo]);
+  }, [theme, lang, online, omtMaxZoom, layersKey, mapSources, !!mapInfo]);
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
@@ -378,6 +476,25 @@ export function MapView() {
   useEffect(() => {
     fogRef.current?.requestDraw();
   }, [fogOpacity, zones, zoneDraft, fogDraft, appReady, ready, theme]);
+  // в режиме кисти один палец рисует, поэтому перетаскивание карты одним пальцем выключаем
+  const brushing = mode === 'fogedit' && fogDraft?.tool === 'brush' && !fogDraft.pan;
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !ready) return;
+    const host = map.getCanvasContainer();
+    if (brushing) {
+      map.dragPan.disable();
+      host.style.touchAction = 'none';
+    } else {
+      map.dragPan.enable();
+      host.style.touchAction = '';
+      mapApi.stroke = null;
+    }
+    return () => {
+      map.dragPan.enable();
+      host.style.touchAction = '';
+    };
+  }, [brushing, ready]);
   useEffect(() => {
     fogRef.current?.refresh();
   }, [fogWind, screen, peek, training]);

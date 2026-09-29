@@ -1,17 +1,15 @@
 import { useApp } from '../state/store';
-import { usePrefs } from '../state/prefs';
 import { useT } from '../i18n';
 import { Icon } from './icons';
-import { acceptDownload, cancelDownload, declineWorld, dismissAreaPrompt, requestDownload } from '../state/downloads';
+import { acceptOnline, cancelDownload, declineOnline, dismissAreaPrompt, requestDownload } from '../state/downloads';
 import { DETAIL_PRESETS } from '../data/countries';
-
-const fmtSize = (b: number) => (b >= 1e9 ? `${(b / 1e9).toFixed(1)} GB` : b >= 1e6 ? `${Math.max(1, Math.round(b / 1e6))} MB` : `${Math.max(1, Math.round(b / 1e3))} KB`);
+import { fmtBytes } from './format';
 
 /**
- * Вопросы про загрузку карт:
- *  • после знакомства — обзорная карта мира (окно с разрешением на доступ в сеть);
- *  • при приближении к области без подробной карты — карточка с предложением;
- *  • ход загрузки, когда она идёт «в фоне».
+ * Вопросы про карты:
+ *  • после знакомства — включить онлайн-карту (окно с пояснением, что и куда передаётся);
+ *  • при приближении к области, которой нет среди сохранённых, — карточка «сохранить для офлайна»;
+ *  • ход сохранения области.
  */
 export function DownloadPrompts() {
   const { t } = useT();
@@ -20,27 +18,26 @@ export function DownloadPrompts() {
   const sheet = useApp((s) => s.sheet);
   const screen = useApp((s) => s.screen);
   const patch = useApp((s) => s.patch);
-  const allow = usePrefs((s) => s.allowDownloads);
 
-  if (prompt && (prompt.kind === 'world' || prompt.kind === 'consent')) {
-    const world = prompt.kind === 'world';
-    const j = prompt.job;
+  if (prompt && (prompt.kind === 'online' || prompt.kind === 'consent')) {
+    const first = prompt.kind === 'online';
+    const j = prompt.kind === 'consent' ? prompt.job : null;
     return (
-      <div className="modal-layer" role="dialog" aria-modal="true" aria-label={t(world ? 'prompt.world.title' : 'prompt.consent.title')}>
+      <div className="modal-layer" role="dialog" aria-modal="true" aria-label={t('prompt.online.title')}>
         <div className="modal download-modal" onClick={(e) => e.stopPropagation()}>
           <span className="dm-ic">
-            <Icon name={world ? 'globe' : 'download'} size={30} strokeWidth={1.9} />
+            <Icon name="globe" size={30} strokeWidth={1.9} />
           </span>
-          <h2>{t(world ? 'prompt.world.title' : 'prompt.consent.title')}</h2>
-          <p>{world ? t('prompt.world.text', { size: fmtSize(j.estimate) }) : t('prompt.consent.text', { name: j.name, size: fmtSize(j.estimate) })}</p>
-          <small className="muted">{t('prompt.privacy')}</small>
-          <button className="btn primary block" onClick={() => acceptDownload(j)}>
-            <Icon name="download" size={18} /> {t(world ? 'prompt.world.yes' : 'prompt.consent.yes')}
+          <h2>{t('prompt.online.title')}</h2>
+          <p>{first ? t('prompt.online.text') : t('prompt.consent.text', { name: j!.name, size: fmtBytes(j!.estimate) })}</p>
+          <small className="muted">{t('prompt.online.privacy')}</small>
+          <button className="btn primary block" onClick={() => acceptOnline(j ?? undefined)}>
+            <Icon name="download" size={18} /> {t(first ? 'prompt.online.yes' : 'prompt.consent.yes')}
           </button>
-          <button className="btn ghost block" onClick={() => (world ? declineWorld() : patch({ downloadPrompt: null }))}>
-            {t(world ? 'prompt.world.no' : 'common.cancel')}
+          <button className="btn ghost block" onClick={() => (first ? declineOnline() : patch({ downloadPrompt: null }))}>
+            {t(first ? 'prompt.online.no' : 'common.cancel')}
           </button>
-          {world && <small className="muted">{t('prompt.world.later')}</small>}
+          {first && <small className="muted">{t('prompt.online.later')}</small>}
         </div>
       </div>
     );
@@ -49,7 +46,7 @@ export function DownloadPrompts() {
   // карточки — только на экране карты; окна с разрешением (выше) видны везде, в том числе поверх настроек
   if (screen !== 'map') return null;
 
-  // ход загрузки (если открыт лист страны, прогресс показывается в нём)
+  // ход сохранения (если открыт лист страны, прогресс показывается в нём)
   if (dl && sheet?.type !== 'country') {
     if (dl.state === 'running') {
       const pct = dl.progress ? Math.round((dl.progress.done / Math.max(1, dl.progress.total)) * 100) : null;
@@ -73,7 +70,6 @@ export function DownloadPrompts() {
           <small>{dl.error}</small>
           <div className="ap-actions">
             <button className="btn ghost sm" onClick={() => patch({ download: null })}>{t('common.close')}</button>
-            <button className="btn primary sm" onClick={() => patch({ sheet: { type: 'maps' }, download: null })}>{t('dl.settings')}</button>
           </div>
         </div>
       );
@@ -90,7 +86,7 @@ export function DownloadPrompts() {
           <div className="ap-main">
             <b>{t('prompt.area.title', { name: `${j.flag ?? ''} ${j.name}`.trim() })}</b>
             <small className="muted">
-              {t('prompt.area.text', { detail: detail ? t(`countries.d.${detail}`) : `z≤${j.maxZoom}`, size: fmtSize(j.estimate) })}
+              {t('prompt.area.text', { detail: detail ? t(`countries.d.${detail}`) : `z≤${j.maxZoom}`, size: fmtBytes(j.estimate) })}
             </small>
           </div>
           <button className="icon-btn" aria-label={t('prompt.area.never')} title={t('prompt.area.never')} onClick={() => dismissAreaPrompt(true)}>
@@ -100,7 +96,7 @@ export function DownloadPrompts() {
         <div className="ap-actions">
           <button className="btn ghost sm" onClick={() => dismissAreaPrompt(false)}>{t('prompt.area.later')}</button>
           <button className="btn primary sm" onClick={() => requestDownload(j)}>
-            <Icon name="download" size={15} /> {allow ? t('countries.download') : t('prompt.area.allow')}
+            <Icon name="download" size={15} /> {t('saved.save')}
           </button>
         </div>
       </div>

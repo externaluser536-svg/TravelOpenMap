@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { AREA_TILE_ZOOM, MAX_AREA_BYTES, WORLD_BBOX, WORLD_MAX_ZOOM, countryAt, hasDetail, hasWorld, planArea, planTitle, tileBounds } from '../src/core/regions';
-import { estimateBytes } from '../src/map/extract';
+import { AREA_TILE_ZOOM, MAX_AREA_BYTES, MAX_PLAN_TILES, WORLD_BBOX, WORLD_MAX_ZOOM, countryAt, planArea, planTitle, tileBounds } from '../src/core/regions';
+import { countTiles, estimateBytes } from '../src/core/tiles';
+import { isSaved } from '../src/map/offline-areas';
 import { orderSources } from '../src/map/style';
 
 describe('страна по точке', () => {
@@ -13,17 +14,13 @@ describe('страна по точке', () => {
   });
 });
 
-describe('покрытие установленными картами', () => {
-  const monaco = { bounds: [7.4, 43.72, 7.44, 43.76] as [number, number, number, number], maxzoom: 15 };
-  const world = { bounds: [-180, -85, 180, 85] as [number, number, number, number], maxzoom: 5 };
-  it('детальная карта покрывает точку, обзорная — нет', () => {
-    expect(hasDetail([monaco, world], 7.42, 43.74)).toBe(true);
-    expect(hasDetail([world], 7.42, 43.74)).toBe(false);
-    expect(hasDetail([monaco], 2.35, 48.85)).toBe(false);
-  });
-  it('обзор мира определяется по ширине', () => {
-    expect(hasWorld([world])).toBe(true);
-    expect(hasWorld([monaco])).toBe(false);
+describe('сохранённые области', () => {
+  const area = { id: 'MC:city', name: 'Монако', bbox: [7.4, 43.72, 7.44, 43.76] as [number, number, number, number], maxZoom: 13, dem: false, at: 0, tiles: 10, bytes: 0 };
+  const coarse = { ...area, id: 'WORLD', bbox: [-180, -85, 180, 85] as [number, number, number, number], maxZoom: 5 };
+  it('область покрывает точку только при достаточной детализации', () => {
+    expect(isSaved([area, coarse], 7.42, 43.74)).toBe(true);
+    expect(isSaved([coarse], 7.42, 43.74)).toBe(false);
+    expect(isSaved([area], 2.35, 48.85)).toBe(false);
   });
 });
 
@@ -35,6 +32,7 @@ describe('план загрузки области', () => {
     expect(p.key).toBe('country:MC');
     expect(p.estimate).toBeLessThanOrEqual(MAX_AREA_BYTES);
     expect(p.maxZoom).toBe(11); // на дальнем приближении — «Города»
+    expect(countTiles(p.bbox, 0, p.maxZoom)).toBeLessThanOrEqual(MAX_PLAN_TILES);
   });
   it('при сильном приближении берёт улицы, если помещается', () => {
     const p = planArea(7.4246, 43.7384, 13)!;
@@ -50,6 +48,7 @@ describe('план загрузки области', () => {
     expect(at.lng >= w && at.lng <= e && at.lat >= s && at.lat <= n).toBe(true);
     expect(p.estimate).toBeLessThanOrEqual(MAX_AREA_BYTES);
     expect(estimateBytes(p.bbox, 0, p.maxZoom)).toBe(p.estimate);
+    expect(countTiles(p.bbox, 0, p.maxZoom)).toBeLessThanOrEqual(MAX_PLAN_TILES);
   });
   it('в океане плана нет', () => {
     expect(planArea(-30, 0, 9)).toBeNull();

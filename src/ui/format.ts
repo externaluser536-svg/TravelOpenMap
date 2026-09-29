@@ -15,3 +15,8 @@ export function distNum(m: number, units: Units): string {
   const v = units === 'imperial' ? m / 1609.344 : m / 1000;
   return v < 10 ? v.toFixed(2) : v.toFixed(1);
 }
+
+/** Размер файла: «418 KB», «15 MB», «4.0 GB». */
+export function fmtBytes(b: number): string {
+  return b >= 1e9 ? `${(b / 1e9).toFixed(1)} GB` : b >= 1e6 ? `${Math.max(1, Math.round(b / 1e6))} MB` : `${Math.max(1, Math.round(b / 1e3))} KB`;
+}

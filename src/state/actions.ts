@@ -11,7 +11,7 @@ import { startCompass } from '../services/compass';
 import { tap } from '../services/haptics';
 import { t } from '../i18n';
 import type { ExclusionZone } from '../core/fog';
-import { FogEditTooLargeError, cellsInCircle, cellsInPolygon, type FogEditAction } from '../core/fogedit';
+import { FogEditTooLargeError, cellsInCircle, cellsInPath, cellsInPolygon, type FogEditAction } from '../core/fogedit';
 import { formatArea } from '../core/geo';
 
 export function startNote(): void {
@@ -50,7 +50,7 @@ export function startFogEdit(action: FogEditAction, at?: { lng: number; lat: num
   tap('light');
   st.patch({
     mode: 'fogedit',
-    fogDraft: { action, tool: 'circle', lng: c.lng, lat: c.lat, radius: 250, poly: [] },
+    fogDraft: { action, tool: 'brush', lng: c.lng, lat: c.lat, radius: 250, poly: [], brushPx: usePrefs.getState().brushPx, pan: false },
     sheet: null,
     screen: 'map',
     follow: false,
@@ -95,11 +95,31 @@ export function applyFogDraft(): number | null {
 }
 
 export function undoFogEdit(): void {
-  const n = engine.undoFogEdit();
-  if (n) {
-    tap('light');
-    useApp.getState().toast({ kind: 'info', icon: 'undo', title: t('fogedit.undone') });
+  if (engine.undoFogEdit()) tap('light');
+}
+
+export function redoFogEdit(): void {
+  if (engine.redoFogEdit()) tap('light');
+}
+
+/** Мазок кисти: сразу применяется, каждый мазок — отдельный шаг отмены. */
+export function applyFogStroke(stroke: { lng: number; lat: number }[], radiusM: number): number {
+  const st = useApp.getState();
+  const d = st.fogDraft;
+  if (!d || !stroke.length) return 0;
+  let keys: number[];
+  try {
+    keys = cellsInPath(stroke, radiusM);
+  } catch (e) {
+    if (e instanceof FogEditTooLargeError) {
+      st.toast({ kind: 'error', title: t('fogedit.too_big'), icon: 'triangle-alert' });
+      return 0;
+    }
+    throw e;
   }
+  const r = engine.editFog(d.action, keys);
+  if (r.changed) tap('light');
+  return r.changed;
 }
 
 export async function editNote(id: string): Promise<void> {

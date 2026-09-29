@@ -50,7 +50,7 @@ try {
   page.on('pageerror', (e) => console.error('[pageerror]', e.message));
   await page.exposeFunction('__csp', (u) => csp.push(u));
   await page.addInitScript(() => {
-    localStorage.setItem('tom.prefs.v1', JSON.stringify({ state: { onboarded: true, lang: 'ru', theme: 'dark', nickname: 'Тест', worldPrompted: true }, version: 0 }));
+    localStorage.setItem('tom.prefs.v1', JSON.stringify({ state: { onboarded: true, lang: 'ru', theme: 'dark', nickname: 'Тест', onlinePrompted: true, tutorialSeen: true }, version: 0 }));
     document.addEventListener('securitypolicyviolation', (e) => window.__csp(`${e.violatedDirective} ← ${e.blockedURI}`));
   });
   await page.goto(server.url);
@@ -118,9 +118,36 @@ try {
   await page.locator('.map-menu .mm-item').nth(1).click(); // «Открыть туман здесь»
   await page.waitForSelector('.fog-panel');
   await page.waitForTimeout(1500);
-  await page.locator('.fog-panel .btn.primary').click();
+  // кисть: мазок пальцем/мышью сразу открывает туман, каждый мазок — отдельный шаг отмены
+  const stroke = async (y) => {
+    await page.mouse.move(70, y);
+    await page.mouse.down();
+    await page.mouse.move(320, y, { steps: 10 });
+    await page.mouse.up();
+    await page.waitForTimeout(700);
+  };
+  const undoBtn = page.locator('.fp-history .icon-btn').nth(0);
+  const redoBtn = page.locator('.fp-history .icon-btn').nth(1);
+  check(await undoBtn.isDisabled(), 'до первого мазка отменять нечего');
+  await stroke(300);
+  check(await undoBtn.isEnabled(), 'кисть: мазок открывает туман и становится шагом отмены');
+  await stroke(380);
+  await undoBtn.click();
+  await page.waitForTimeout(300);
+  check((await undoBtn.isEnabled()) && (await redoBtn.isEnabled()), 'отмена возвращает один шаг (первый мазок остаётся), можно вернуть');
+  await undoBtn.click();
+  await page.waitForTimeout(300);
+  check(await undoBtn.isDisabled(), 'вторая отмена откатывает и первый мазок');
+  await redoBtn.click();
+  await redoBtn.click();
+  await page.waitForTimeout(300);
+  check((await redoBtn.isDisabled()) && (await undoBtn.isEnabled()), 'возврат повторяет оба мазка');
+  // круг: как раньше, по кнопке
+  await page.locator('.fp-tool').nth(1).click();
+  await page.waitForTimeout(400);
+  await page.locator('.fog-panel .mp-actions .btn.primary').first().click();
   await page.waitForTimeout(1200);
-  await page.locator('.fog-panel .icon-btn').click();
+  await page.locator('.fog-panel .mp-actions .btn').last().click(); // «Готово»
   await dismiss();
   await page.waitForTimeout(500);
   const areaAfterEdit = await area();
@@ -138,32 +165,25 @@ try {
   check(shown === '0', 'экран «Приватность» показывает 0 внешних запросов', shown);
   await page.locator('.sheet .icon-btn[aria-label="close"]').click();
 
-  // 3б) шлюз загрузки карт: по умолчанию выключен — iframe нет, кнопка «Скачать» недоступна
+  // 3б) сохранение карты страны: без согласия на онлайн-карту сначала окно с вопросом, сеть не используется
   await page.waitForTimeout(400);
   await scrollDown();
   await page.locator('.card.list .row').nth(1).click(); // «Офлайн-карты»
   await page.waitForTimeout(400);
-  await page.locator('.sheet .btn.primary').first().click(); // «Добавить страну»
+  await page.locator('.sheet .btn.primary').first().click(); // «Выбрать страну»
   await page.waitForTimeout(600);
   await page.fill('.picker .search input', 'Порту');
   await page.locator('.country-row').first().click();
   await page.waitForTimeout(500);
-  check((await page.locator('iframe').count()) === 0, 'по умолчанию сетевой шлюз (iframe) отсутствует в DOM');
-  check(await page.locator('.sheet .btn.primary.block').isEnabled(), 'кнопка «Скачать карту» видна и доступна сразу после выбора страны');
-  check(await page.evaluate(() => JSON.parse(localStorage.getItem('tom.prefs.v1')).state.allowDownloads !== true), 'настройка «разрешить загрузку» по умолчанию выключена');
-  // нажатие «Скачать» без разрешения не ходит в сеть: сначала окно с согласием
+  check(await page.locator('.sheet .btn.primary.block').isEnabled(), 'кнопка сохранения карты видна и доступна сразу после выбора страны');
+  check(await page.evaluate(() => JSON.parse(localStorage.getItem('tom.prefs.v1')).state.onlineMaps !== true), 'онлайн-карта по умолчанию выключена');
   await page.locator('.sheet .btn.primary.block').click();
   await page.waitForSelector('.download-modal');
-  check((await page.locator('iframe').count()) === 0, 'по нажатию «Скачать» сначала запрашивается согласие — шлюз ещё не создан');
+  check(true, 'по нажатию «Сохранить» сначала запрашивается согласие');
   await page.locator('.download-modal .btn.ghost').click(); // «Отмена»
   await page.waitForTimeout(300);
-  check((await page.locator('.download-modal').count()) === 0 && (await page.locator('iframe').count()) === 0, 'отказ закрывает окно, сеть не задействована');
-  check(await page.evaluate(() => JSON.parse(localStorage.getItem('tom.prefs.v1')).state.allowDownloads !== true), 'после отказа загрузка остаётся выключенной');
-  // включение переключателя само по себе тоже ничего не отправляет: шлюз создаётся только по нажатию «Скачать»/«Проверить»
-  await page.locator('.source-card .switch').click();
-  await page.waitForTimeout(500);
-  check((await page.locator('iframe').count()) === 0, 'после включения загрузки iframe всё равно не создаётся до явного запроса');
-  await page.locator('.source-card .switch').click(); // вернуть выключенное состояние
+  check((await page.locator('.download-modal').count()) === 0, 'отказ закрывает окно');
+  check(await page.evaluate(() => JSON.parse(localStorage.getItem('tom.prefs.v1')).state.onlineMaps !== true), 'после отказа онлайн-карта остаётся выключенной');
   await page.locator('.sheet .icon-btn[aria-label="close"]').click();
   await page.waitForTimeout(300);
 
@@ -194,22 +214,21 @@ try {
   check(failedReqs.filter((u) => !u.includes('example.com')).length === 0, 'нет неудавшихся запросов', failedReqs.slice(0, 3).join(', '));
   console.log(`\nВсего запросов: ${requests.length}; локальных: ${local.length}; внешних (не считая зондов): ${real.length}`);
 
-  // 6) после знакомства спрашиваем про обзорную карту мира — и не выходим в сеть, пока пользователь не согласился
+  // 6) после знакомства спрашиваем про онлайн-карту — и не выходим в сеть, пока пользователь не согласился
   const ctx2 = await browser.newContext({ viewport: { width: 390, height: 844 }, locale: 'ru-RU' });
   const req2 = [];
   ctx2.on('request', (r) => req2.push(r.url()));
   const page2 = await ctx2.newPage();
-  await page2.addInitScript(() => localStorage.setItem('tom.prefs.v1', JSON.stringify({ state: { onboarded: true, lang: 'ru', theme: 'dark', nickname: 'Тест' }, version: 0 })));
+  await page2.addInitScript(() => localStorage.setItem('tom.prefs.v1', JSON.stringify({ state: { onboarded: true, lang: 'ru', theme: 'dark', nickname: 'Тест', tutorialSeen: true }, version: 0 })));
   await page2.goto(server.url);
   await page2.waitForSelector('.download-modal', { timeout: 20000 });
-  check(true, 'после знакомства показан вопрос про обзорную карту мира');
-  check((await page2.locator('iframe').count()) === 0, 'пока нет согласия, сетевого шлюза нет');
+  check(true, 'после знакомства показан вопрос про онлайн-карту');
   check(req2.filter((u) => !u.startsWith(origin) && !u.startsWith('blob:') && !u.startsWith('data:')).length === 0, 'до согласия — ни одного внешнего запроса');
   await page2.locator('.download-modal .btn.ghost').click(); // «Не сейчас»
   await page2.waitForTimeout(400);
   check((await page2.locator('.download-modal').count()) === 0, '«Не сейчас» закрывает вопрос');
   const st2 = await page2.evaluate(() => JSON.parse(localStorage.getItem('tom.prefs.v1')).state);
-  check(st2.worldPrompted === true && st2.allowDownloads !== true, 'после отказа вопрос не повторяется, загрузка остаётся выключенной');
+  check(st2.onlinePrompted === true && st2.onlineMaps !== true, 'после отказа вопрос не повторяется, онлайн-карта остаётся выключенной');
   check(req2.filter((u) => !u.startsWith(origin) && !u.startsWith('blob:') && !u.startsWith('data:')).length === 0, 'после отказа внешних запросов по-прежнему нет');
   await ctx2.close();
 } finally {

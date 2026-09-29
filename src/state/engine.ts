@@ -47,6 +47,7 @@ const MAX_SPEED = 70; // м/с — быстрее считаем «телепо�
 const JITTER = 3; // м — меньшие смещения считаем дрожанием GPS
 const TRACK_STEP = 10; // м между точками трека
 const SAVE_DELAY = 2500;
+const FOG_UNDO_DEPTH = 100; // шагов отмены ручной правки тумана
 
 type RevealListener = (cells: number[]) => void;
 
@@ -297,12 +298,13 @@ class Engine {
 
   // ------------------------------------------------------------------ ручная правка тумана
 
-  private lastFogEdit: { action: FogEditAction; keys: number[] } | null = null;
+  private fogUndo: { action: FogEditAction; keys: number[] }[] = [];
+  private fogRedo: { action: FogEditAction; keys: number[] }[] = [];
 
   /**
    * Принудительно открывает или закрывает ячейки (например, вы бывали здесь до установки приложения).
    * Открытая площадь идёт в общую статистику и XP, но не в дневные графики и не в дистанцию.
-   * Исключённые зоны при открытии по-прежнему остаются закрытыми.
+   * Исключённые зоны при открытии по-прежнему остаются закрытыми. Каждая правка — отдельный шаг отмены.
    */
   editFog(action: FogEditAction, keys: readonly number[]): { changed: number; areaM2: number } {
     const zones = usePrefs.getState().zones;
@@ -319,36 +321,66 @@ class Engine {
       changedKeys.push(k);
       areaM2 += cellArea(y);
     }
+    if (changedKeys.length) {
+      this.fogUndo.push({ action, keys: changedKeys });
+      if (this.fogUndo.length > FOG_UNDO_DEPTH) this.fogUndo.shift();
+      this.fogRedo = [];
+    }
     this.finishFogEdit(action, changedKeys);
     return { changed: changedKeys.length, areaM2 };
   }
 
   get canUndoFogEdit(): boolean {
-    return this.lastFogEdit !== null && this.lastFogEdit.keys.length > 0;
+    return this.fogUndo.length > 0;
   }
 
-  /** Отменяет последнюю ручную правку тумана. */
+  get canRedoFogEdit(): boolean {
+    return this.fogRedo.length > 0;
+  }
+
+  /** Отменяет последнюю ручную правку тумана (можно много раз подряд). Возвращает число ячеек. */
   undoFogEdit(): number {
-    const e = this.lastFogEdit;
+    const e = this.fogUndo.pop();
     if (!e) return 0;
-    const back: FogEditAction = e.action === 'open' ? 'close' : 'open';
-    for (const k of e.keys) {
-      if (back === 'close') this.grid.remove(keyX(k), keyY(k));
-      else this.grid.add(keyX(k), keyY(k));
+    this.fogRedo.push(e);
+    return this.applyFogStep(e.action === 'open' ? 'close' : 'open', e.keys);
+  }
+
+  /** Возвращает отменённую правку. */
+  redoFogEdit(): number {
+    const e = this.fogRedo.pop();
+    if (!e) return 0;
+    this.fogUndo.push(e);
+    return this.applyFogStep(e.action, e.keys);
+  }
+
+  private applyFogStep(action: FogEditAction, keys: readonly number[]): number {
+    let n = 0;
+    for (const k of keys) {
+      const x = keyX(k);
+      const y = keyY(k);
+      if (action === 'close') {
+        if (this.grid.remove(x, y)) n++;
+      } else if (!this.grid.has(x, y)) {
+        this.grid.add(x, y);
+        n++;
+      }
     }
-    const n = e.keys.length;
-    this.lastFogEdit = null;
     this.finishFogEdit(null, []);
     return n;
   }
 
+  private clearFogHistory(): void {
+    this.fogUndo = [];
+    this.fogRedo = [];
+  }
+
   private finishFogEdit(action: FogEditAction | null, keys: number[]): void {
-    if (action) this.lastFogEdit = keys.length ? { action, keys } : this.lastFogEdit;
     this.recount();
     this.grid.version++;
     if (action === 'open' && keys.length && keys.length <= 4000) for (const cb of this.revealListeners) cb(keys);
     this.publish();
-    useApp.getState().patch({ canUndoFog: this.canUndoFogEdit });
+    useApp.getState().patch({ canUndoFog: this.canUndoFogEdit, canRedoFog: this.canRedoFogEdit });
     this.scheduleSave();
   }
 
@@ -523,7 +555,7 @@ class Engine {
     await clearFogStore();
     workoutEngine.discard();
     await workoutEngine.reload();
-    this.lastFogEdit = null;
+    this.clearFogHistory();
     this.grid.clear();
     this.days.clear();
     this.tracks.clear();
@@ -538,7 +570,7 @@ class Engine {
 
   /** Полная перезагрузка состояния из БД (после импорта резервной копии). */
   async reloadFromDb(): Promise<void> {
-    this.lastFogEdit = null;
+    this.clearFogHistory();
     this.grid.clear();
     this.days.clear();
     this.tracks.clear();

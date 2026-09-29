@@ -16,12 +16,14 @@ import { EQUATOR_M, latToY, lngToX, xToLng, yToLat } from '../core/geo';
 
 /** Выделение области при ручной правке тумана (рисуется поверх тумана). */
 export interface DraftShape {
-  kind: 'circle' | 'poly';
+  kind: 'circle' | 'poly' | 'stroke';
   action: 'open' | 'close';
   lng?: number;
   lat?: number;
   radius?: number;
   points?: { lng: number; lat: number }[];
+  /** для кисти: радиус в пикселях экрана */
+  radiusPx?: number;
 }
 
 export interface FogOptions {
@@ -534,6 +536,26 @@ export class FogRenderer {
     g.save();
     g.beginPath();
     let anchors: { x: number; y: number }[] = [];
+    if (shape.kind === 'stroke') {
+      // мазок кисти: один контур с круглыми концами, поэтому пересечения не темнеют
+      const pts = (shape.points ?? []).map((p) => {
+        const wx = lngToX(p.lng) * v.worldSize;
+        const wy = latToY(p.lat) * v.worldSize;
+        return { x: v.sx(wx, wy), y: v.sy(wx, wy) };
+      });
+      if (pts.length) {
+        const r = shape.radiusPx ?? 24;
+        g.lineCap = 'round';
+        g.lineJoin = 'round';
+        g.lineWidth = r * 2;
+        g.strokeStyle = fill.replace(/[\d.]+\)$/, open ? '0.42)' : '0.46)');
+        pts.forEach((a, i) => (i ? g.lineTo(a.x, a.y) : g.moveTo(a.x, a.y)));
+        if (pts.length === 1) g.lineTo(pts[0].x + 0.01, pts[0].y);
+        g.stroke();
+      }
+      g.restore();
+      return;
+    }
     if (shape.kind === 'circle' && shape.lng !== undefined && shape.lat !== undefined && shape.radius) {
       const c = this.zoneScreen({ id: 'shape', name: '', lng: shape.lng, lat: shape.lat, radius: shape.radius }, v);
       g.arc(c.x, c.y, c.r, 0, Math.PI * 2);

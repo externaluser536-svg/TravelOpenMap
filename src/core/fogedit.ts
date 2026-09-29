@@ -37,6 +37,48 @@ export function cellsInCircle(center: LngLat, radiusM: number): number[] {
   return out;
 }
 
+/** Ячейки, центр которых лежит не дальше radiusM от ломаной (мазок кисти). Одна точка — просто круг. */
+export function cellsInPath(points: readonly LngLat[], radiusM: number): number[] {
+  if (!points.length) return [];
+  const lat0 = points[0].lat;
+  const cellM = metersPerUnit(lat0) / CELLS_PER_AXIS;
+  const r = radiusM / cellM;
+  const pts = points.map((p) => [lngToX(p.lng) * CELLS_PER_AXIS, latToY(p.lat) * CELLS_PER_AXIS] as const);
+  const r2 = r * r;
+  const seen = new Set<number>();
+  const out: number[] = [];
+  let budget = MAX_EDIT_CELLS;
+  const segs = pts.length === 1 ? [[pts[0], pts[0]] as const] : pts.slice(1).map((b, i) => [pts[i], b] as const);
+  for (const [a, b] of segs) {
+    const [ax, ay] = a;
+    const [bx, by] = b;
+    const dx = bx - ax;
+    const dy = by - ay;
+    const len2 = dx * dx + dy * dy;
+    const x0 = Math.max(0, Math.floor(Math.min(ax, bx) - r - 0.5));
+    const x1 = Math.min(CELLS_PER_AXIS - 1, Math.ceil(Math.max(ax, bx) + r - 0.5));
+    const y0 = Math.max(0, Math.floor(Math.min(ay, by) - r - 0.5));
+    const y1 = Math.min(CELLS_PER_AXIS - 1, Math.ceil(Math.max(ay, by) + r - 0.5));
+    if ((x1 - x0 + 1) * (y1 - y0 + 1) > MAX_EDIT_CELLS * 4) throw new FogEditTooLargeError((x1 - x0 + 1) * (y1 - y0 + 1));
+    for (let x = x0; x <= x1; x++) {
+      for (let y = y0; y <= y1; y++) {
+        const px = x + 0.5;
+        const py = y + 0.5;
+        const t = len2 ? Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / len2)) : 0;
+        const ex = px - (ax + t * dx);
+        const ey = py - (ay + t * dy);
+        if (ex * ex + ey * ey > r2) continue;
+        const k = cellKey(x, y);
+        if (seen.has(k)) continue;
+        seen.add(k);
+        out.push(k);
+        if (--budget < 0) throw new FogEditTooLargeError(out.length);
+      }
+    }
+  }
+  return out;
+}
+
 /** Ячейки, центр которых лежит внутри многоугольника (≥ 3 вершин). */
 export function cellsInPolygon(points: readonly LngLat[]): number[] {
   if (points.length < 3) return [];

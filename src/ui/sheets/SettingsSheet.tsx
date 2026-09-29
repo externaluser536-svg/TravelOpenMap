@@ -7,6 +7,54 @@ import { formatDistance } from '../../core/geo';
 import { useState } from 'react';
 import { ProfileForm, ThemePicker, type ProfileValue } from '../ProfileForm';
 import { checkNickname, normalizeNick } from '../../core/profile';
+import { backgroundSupported } from '../../services/background';
+import { setBackgroundTracking } from '../../services/location';
+
+/** Фоновая запись трека: включение — только после объяснения (уведомление, расход батареи). */
+function BackgroundRow() {
+  const { t } = useT();
+  const on = usePrefs((s) => s.backgroundTracking);
+  const [ask, setAsk] = useState(false);
+  const supported = backgroundSupported();
+  return (
+    <div className="set-col" data-tour="background">
+      <div className="set-row">
+        <span>
+          <Icon name="navigation" size={18} /> {t('bg.title')}
+        </span>
+        <Switch
+          checked={on}
+          disabled={!supported}
+          onChange={(v) => {
+            if (v) setAsk(true);
+            else void setBackgroundTracking(false);
+          }}
+          label={t('bg.title')}
+        />
+      </div>
+      {ask && (
+        <div className="confirm info col">
+          <p>{t('bg.consent')}</p>
+          <div className="row-btns">
+            <button className="btn ghost grow" onClick={() => setAsk(false)}>
+              {t('common.cancel')}
+            </button>
+            <button
+              className="btn primary grow"
+              onClick={() => {
+                setAsk(false);
+                void setBackgroundTracking(true);
+              }}
+            >
+              {t('bg.enable')}
+            </button>
+          </div>
+        </div>
+      )}
+      <small className="muted">{supported ? t('bg.hint') : t('bg.unsupported')}</small>
+    </div>
+  );
+}
 
 /** Профиль в настройках: аватар, страна и вес применяются сразу, ник — когда он корректен. */
 function SettingsProfile() {
@@ -112,6 +160,7 @@ export function SettingsSheet() {
           </span>
           <Switch checked={p.recordTrack} onChange={(v) => p.set({ recordTrack: v })} label={t('settings.track')} />
         </div>
+        <BackgroundRow />
         <div className="set-row">
           <span>
             <Icon name="vibrate" size={18} /> {t('settings.haptics')}

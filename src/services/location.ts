@@ -3,6 +3,9 @@
 import { Geolocation, type Position } from '@capacitor/geolocation';
 import { useApp, type Fix } from '../state/store';
 import { engine } from '../state/engine';
+import { usePrefs } from '../state/prefs';
+import { t } from '../i18n';
+import { BackgroundTracker, FixReplayer, backgroundSupported, toFix as nativeToFix } from './background';
 
 let watchId: string | null = null;
 let webWatchId: number | null = null;
@@ -19,8 +22,63 @@ function toFix(p: Position): Fix {
   };
 }
 
+// ---------------------------------------------------------------- фоновая запись (Android)
+let bg: { replayer: FixReplayer; handle: { remove: () => Promise<void> } | null; onVisible: () => void } | null = null;
+
+async function catchUpBackground(): Promise<void> {
+  if (!bg) return;
+  await bg.replayer.catchUp(async () => {
+    const r = await BackgroundTracker.drain();
+    // запись остановили кнопкой в уведомлении — выключаем настройку и возвращаемся к обычному режиму
+    if (!r.running && usePrefs.getState().backgroundTracking) {
+      usePrefs.getState().set({ backgroundTracking: false });
+      useApp.getState().toast({ kind: 'info', title: t('bg.stopped'), icon: 'info' });
+      queueMicrotask(() => void restartLocation());
+    }
+    return r.fixes.map(nativeToFix);
+  });
+}
+
+async function startBackground(): Promise<boolean> {
+  try {
+    await BackgroundTracker.start({ title: t('bg.notif_title'), text: t('bg.notif_text'), stopLabel: t('bg.notif_stop') });
+  } catch (e) {
+    if ((e as { message?: string })?.message === 'location-denied') useApp.getState().patch({ gps: 'denied' });
+    return false;
+  }
+  const replayer = new FixReplayer((f) => engine.onFix(f));
+  const handle = await BackgroundTracker.addListener('fix', (n) => replayer.live(nativeToFix(n)));
+  const onVisible = () => {
+    if (document.visibilityState === 'visible') void catchUpBackground();
+  };
+  document.addEventListener('visibilitychange', onVisible);
+  bg = { replayer, handle, onVisible };
+  await catchUpBackground();
+  return true;
+}
+
+async function stopBackground(): Promise<void> {
+  if (!bg) return;
+  const b = bg;
+  bg = null;
+  document.removeEventListener('visibilitychange', b.onVisible);
+  await b.handle?.remove().catch(() => {});
+  await BackgroundTracker.stop().catch(() => {});
+}
+
+/** Включает или выключает фоновую запись и перезапускает определение положения. */
+export async function setBackgroundTracking(on: boolean): Promise<void> {
+  usePrefs.getState().set({ backgroundTracking: on });
+  await restartLocation();
+}
+
+async function restartLocation(): Promise<void> {
+  await stopLocation();
+  await startLocation();
+}
+
 export async function startLocation(): Promise<void> {
-  if (watchId || starting) return;
+  if (watchId || starting || bg) return;
   starting = true;
   const app = useApp.getState();
   try {
@@ -36,6 +94,10 @@ export async function startLocation(): Promise<void> {
       }
     } catch {
       // на вебе checkPermissions может не поддерживаться — продолжаем, браузер сам спросит
+    }
+    if (usePrefs.getState().backgroundTracking && backgroundSupported()) {
+      if (await startBackground()) return;
+      usePrefs.getState().set({ backgroundTracking: false }); // не удалось — остаёмся на обычной записи
     }
     watchId = await Geolocation.watchPosition(
       // enableLocationFallback: без сервисов Google Play плагин сам переключается на системный LocationManager (GPS)
@@ -81,6 +143,7 @@ export function startWebFallback(): boolean {
 }
 
 export async function stopLocation(): Promise<void> {
+  await stopBackground();
   if (webWatchId !== null) {
     navigator.geolocation.clearWatch(webWatchId);
     webWatchId = null;

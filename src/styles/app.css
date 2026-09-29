@@ -623,6 +623,9 @@ input[type='range']::-moz-range-thumb {
   align-items: center;
   gap: 8px;
 }
+.switch:disabled {
+  opacity: 0.4;
+}
 .switch {
   width: 50px;
   height: 30px;
@@ -1624,6 +1627,9 @@ button.row:active {
 .confirm p {
   flex: 1;
   font-weight: 600;
+}
+.confirm.info {
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
 }
 .confirm.col {
   flex-direction: column;
@@ -3410,10 +3416,134 @@ select.input {
 .fog-panel.is-close .mp-title {
   color: var(--danger);
 }
-.fp-segs {
+.fp-history {
+  display: inline-flex;
+  gap: 2px;
+}
+.fp-history .icon-btn:disabled {
+  opacity: 0.32;
+}
+.fp-action {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 8px;
+}
+.fp-act {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  grid-template-rows: auto auto;
+  column-gap: 8px;
+  align-items: center;
+  text-align: left;
+  padding: 9px 11px;
+  border-radius: 16px;
+  border: 1.5px solid var(--border);
+  background: color-mix(in srgb, var(--text) 5%, transparent);
+  color: var(--muted);
+}
+.fp-act svg {
+  grid-row: 1 / 3;
+}
+.fp-act span {
+  font-weight: 800;
+  font-size: 14px;
+  color: var(--text);
+}
+.fp-act small {
+  font-size: 11px;
+  line-height: 1.2;
+  opacity: 0.85;
+}
+.fp-act.is-open.on {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+  color: var(--accent);
+}
+.fp-act.is-close.on {
+  border-color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 18%, transparent);
+  color: var(--danger);
+}
+.fp-tools {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+}
+.fp-tool {
+  display: grid;
+  justify-items: center;
+  gap: 3px;
+  padding: 8px 4px;
+  border-radius: 14px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--muted);
+  background: transparent;
+}
+.fp-tool.on {
+  background: color-mix(in srgb, var(--text) 10%, transparent);
+  color: var(--text);
+  box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--text) 30%, transparent);
+}
+.fp-brush {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.fp-sizes {
+  display: inline-flex;
+  gap: 6px;
+}
+.fp-size-btn {
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: color-mix(in srgb, var(--text) 6%, transparent);
+  border: 1.5px solid transparent;
+}
+.fp-size-btn i {
+  display: block;
+  border-radius: 50%;
+  background: var(--muted);
+  max-width: 34px;
+  max-height: 34px;
+}
+.fp-size-btn.on {
+  border-color: var(--text);
+}
+.fp-size-btn.on i {
+  background: var(--text);
+}
+.fog-panel.is-open .fp-size-btn.on {
+  border-color: var(--accent);
+}
+.fog-panel.is-open .fp-size-btn.on i {
+  background: var(--accent);
+}
+.fog-panel.is-close .fp-size-btn.on {
+  border-color: var(--danger);
+}
+.fog-panel.is-close .fp-size-btn.on i {
+  background: var(--danger);
+}
+.fp-pan {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 9px 12px;
+  border-radius: 999px;
+  font-weight: 700;
+  font-size: 13px;
+  border: 1.5px solid var(--border);
+  color: var(--muted);
+}
+.fp-pan.on {
+  border-color: var(--text);
+  background: color-mix(in srgb, var(--text) 12%, transparent);
+  color: var(--text);
 }
 .fp-size {
   justify-self: start;
@@ -3717,4 +3847,37 @@ select.input {
 }
 .area-prompt .bar {
   height: 6px;
+}
+
+/* ───────────────────────── слои карты ───────────────────────── */
+.layer-row {
+  gap: 12px;
+  padding: 12px 14px;
+}
+.layer-row.dim {
+  opacity: 0.55;
+}
+.layer-ic {
+  flex: none;
+  width: 40px;
+  height: 40px;
+  border-radius: 14px;
+  display: grid;
+  place-items: center;
+  color: var(--c);
+  background: color-mix(in srgb, var(--c) 16%, transparent);
+}
+.layer-text {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+  text-align: left;
+}
+.layer-text small {
+  line-height: 1.3;
+}
+.grid-gap {
+  display: grid;
+  gap: 10px;
 }

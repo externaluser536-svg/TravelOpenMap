@@ -40,6 +40,6 @@ export const DETAIL_PRESETS = [
   { id: 'overview', maxZoom: 8 },
   { id: 'city', maxZoom: 11 },
   { id: 'street', maxZoom: 13 },
-  { id: 'max', maxZoom: 15 },
+  { id: 'max', maxZoom: 14 },
 ] as const;
 export type DetailId = (typeof DETAIL_PRESETS)[number]['id'];

@@ -3,9 +3,9 @@ import { useApp } from '../state/store';
 import { usePrefs } from '../state/prefs';
 import { useT } from '../i18n';
 import { Icon } from './icons';
-import { CompassRose, ProgressRing, Segmented } from './common';
+import { CompassRose, ProgressRing } from './common';
 import { mapApi } from '../map/MapView';
-import { applyFogDraft, cancelMode, locateMe, saveZoneDraft, startFogEdit, startMeasureAt, startNoteAt, toggleMeasure, togglePeek, undoFogEdit } from '../state/actions';
+import { applyFogDraft, cancelMode, locateMe, saveZoneDraft, startFogEdit, startMeasureAt, redoFogEdit, startNoteAt, toggleMeasure, togglePeek, undoFogEdit } from '../state/actions';
 import { polygonAreaM2 } from '../core/fogedit';
 import type { FogDraft } from '../state/store';
 import { cardinal, formatArea, formatCoords, formatDistance, haversine, pathLength } from '../core/geo';
@@ -99,6 +99,9 @@ export function Hud() {
         </button>
         <button className="fab glass" onClick={() => startFogEdit('open')} aria-label={t('hud.fogedit')}>
           <Icon name="brush" />
+        </button>
+        <button className="fab glass" onClick={() => patch({ sheet: { type: 'layers' } })} aria-label={t('hud.layers')} data-tour="layers">
+          <Icon name="layers" />
         </button>
       </div>
 
@@ -259,48 +262,87 @@ function ZonePanel() {
   );
 }
 
+const BRUSH_SIZES = [14, 24, 36, 54];
+
 function FogEditPanel() {
   const { t, lang } = useT();
   const d = useApp((s) => s.fogDraft);
   const canUndo = useApp((s) => s.canUndoFog);
+  const canRedo = useApp((s) => s.canRedoFog);
   const patch = useApp((s) => s.patch);
   const units = usePrefs((s) => s.units);
   if (!d) return null;
   const set = (p: Partial<FogDraft>) => patch({ fogDraft: { ...d, ...p } });
   const open = d.action === 'open';
-  const size = d.tool === 'circle' ? Math.PI * d.radius * d.radius : polygonAreaM2(d.poly);
+  const size = d.tool === 'circle' ? Math.PI * d.radius * d.radius : d.tool === 'area' ? polygonAreaM2(d.poly) : 0;
   // логарифмический ползунок 30 м … 5 км
   const slider = Math.round((Math.log(d.radius / 30) / Math.log(5000 / 30)) * 100);
   const ready = d.tool === 'circle' || d.poly.length >= 3;
+  const setBrush = (px: number) => {
+    usePrefs.getState().set({ brushPx: px });
+    set({ brushPx: px });
+  };
+  const tools = [
+    { id: 'brush' as const, icon: 'brush', label: t('fogedit.tool_brush') },
+    { id: 'circle' as const, icon: 'circle', label: t('fogedit.tool_circle') },
+    { id: 'area' as const, icon: 'polygon', label: t('fogedit.tool_area') },
+  ];
   return (
-    <div className={`mode-panel glass fog-panel ${open ? 'is-open' : 'is-close'}`}>
+    <div className={`mode-panel glass fog-panel ${open ? 'is-open' : 'is-close'}`} data-tour="fogpanel">
       <div className="mp-head">
         <span className="mp-title">
           <Icon name="brush" size={16} /> {t('fogedit.title')}
         </span>
-        <button className="icon-btn" onClick={cancelMode} aria-label="close">
-          <Icon name="x" size={18} />
+        <div className="fp-history">
+          <button className="icon-btn" disabled={!canUndo} onClick={undoFogEdit} aria-label={t('fogedit.undo_last')} title={t('fogedit.undo_last')}>
+            <Icon name="undo" size={18} />
+          </button>
+          <button className="icon-btn" disabled={!canRedo} onClick={redoFogEdit} aria-label={t('fogedit.redo')} title={t('fogedit.redo')}>
+            <Icon name="redo" size={18} />
+          </button>
+        </div>
+      </div>
+
+      <div className="fp-action" role="group" aria-label={t('fogedit.action')}>
+        <button className={`fp-act is-open ${open ? 'on' : ''}`} onClick={() => set({ action: 'open' })}>
+          <Icon name="cloud-off" size={18} />
+          <span>{t('fogedit.open')}</span>
+          <small>{t('fogedit.open_sub')}</small>
+        </button>
+        <button className={`fp-act is-close ${!open ? 'on' : ''}`} onClick={() => set({ action: 'close' })}>
+          <Icon name="cloud" size={18} />
+          <span>{t('fogedit.close')}</span>
+          <small>{t('fogedit.close_sub')}</small>
         </button>
       </div>
-      <div className="fp-segs">
-        <Segmented
-          value={d.action}
-          onChange={(v) => set({ action: v })}
-          options={[
-            { value: 'open' as const, label: t('fogedit.open') },
-            { value: 'close' as const, label: t('fogedit.close') },
-          ]}
-        />
-        <Segmented
-          value={d.tool}
-          onChange={(v) => set({ tool: v })}
-          options={[
-            { value: 'circle' as const, label: t('fogedit.tool_circle') },
-            { value: 'area' as const, label: t('fogedit.tool_area') },
-          ]}
-        />
+
+      <div className="fp-tools" role="group" aria-label={t('fogedit.tool')}>
+        {tools.map((x) => (
+          <button key={x.id} className={`fp-tool ${d.tool === x.id ? 'on' : ''}`} onClick={() => set({ tool: x.id, pan: false, poly: [] })}>
+            <Icon name={x.icon} size={18} />
+            <span>{x.label}</span>
+          </button>
+        ))}
       </div>
-      {d.tool === 'circle' ? (
+
+      {d.tool === 'brush' && (
+        <>
+          <div className="fp-brush">
+            <div className="fp-sizes" role="group" aria-label={t('fogedit.size')}>
+              {BRUSH_SIZES.map((px) => (
+                <button key={px} className={`fp-size-btn ${d.brushPx === px ? 'on' : ''}`} onClick={() => setBrush(px)} aria-label={`${t('fogedit.size')} ${px}`}>
+                  <i style={{ width: px * 0.62, height: px * 0.62 }} />
+                </button>
+              ))}
+            </div>
+            <button className={`fp-pan ${d.pan ? 'on' : ''}`} onClick={() => set({ pan: !d.pan })} aria-pressed={d.pan}>
+              <Icon name="hand" size={16} /> {t('fogedit.pan')}
+            </button>
+          </div>
+          <p className="mp-hint">{d.pan ? t('fogedit.hint_pan') : t(open ? 'fogedit.hint_brush_open' : 'fogedit.hint_brush_close')}</p>
+        </>
+      )}
+      {d.tool === 'circle' && (
         <>
           <div className="slider-row">
             <span>{t('fogedit.radius')}</span>
@@ -316,12 +358,11 @@ function FogEditPanel() {
           />
           <p className="mp-hint">{t(open ? 'fogedit.hint_open' : 'fogedit.hint_close')}</p>
         </>
-      ) : (
-        <p className="mp-hint">
-          {d.poly.length ? t('fogedit.points', { n: d.poly.length }) : t('fogedit.hint_area')}
-        </p>
       )}
+      {d.tool === 'area' && <p className="mp-hint">{d.poly.length ? t('fogedit.points', { n: d.poly.length }) : t('fogedit.hint_area')}</p>}
+
       {size > 0 && <div className="fp-size">{t('fogedit.area_size', { area: formatArea(size, units, lang) })}</div>}
+
       <div className="mp-actions">
         {d.tool === 'area' && (
           <>
@@ -333,16 +374,13 @@ function FogEditPanel() {
             </button>
           </>
         )}
-        <button className="btn ghost" disabled={!canUndo} onClick={undoFogEdit}>
-          <Icon name="undo" size={16} /> {t('fogedit.undo_last')}
-        </button>
-      </div>
-      <div className="mp-actions">
-        <button className="btn ghost" onClick={cancelMode}>
-          {t('fogedit.finish')}
-        </button>
-        <button className={`btn grow ${open ? 'primary' : 'danger'}`} disabled={!ready} onClick={() => void applyFogDraft()}>
-          <Icon name={open ? 'cloud-off' : 'cloud'} size={16} /> {t(open ? 'fogedit.apply_open' : 'fogedit.apply_close')}
+        {d.tool !== 'brush' && (
+          <button className={`btn grow ${open ? 'primary' : 'danger'}`} disabled={!ready} onClick={() => void applyFogDraft()}>
+            <Icon name={open ? 'cloud-off' : 'cloud'} size={16} /> {t(open ? 'fogedit.apply_open' : 'fogedit.apply_close')}
+          </button>
+        )}
+        <button className={`btn ${d.tool === 'brush' ? 'primary grow' : 'ghost'}`} onClick={cancelMode}>
+          <Icon name="check" size={16} /> {t('fogedit.finish')}
         </button>
       </div>
       <small className="muted fp-note">{t('fogedit.note')}</small>

@@ -6,6 +6,20 @@ import type { ExclusionZone } from '../core/fog';
 import type { CompletedMap } from '../core/challenges';
 import type { Lang, Units } from '../core/geo';
 
+/** Область, тайлы которой закреплены в кэше и доступны без сети. */
+export interface SavedArea {
+  id: string;
+  name: string;
+  flag?: string;
+  bbox: [number, number, number, number];
+  maxZoom: number;
+  /** сохранён ли рельеф (для слоя «Высоты») */
+  dem: boolean;
+  at: number;
+  tiles: number;
+  bytes: number;
+}
+
 export type ThemePref = 'auto' | 'light' | 'dark';
 
 export interface Prefs {
@@ -27,16 +41,24 @@ export interface Prefs {
   onboarded: boolean;
   activeMapId: string;
   developer: boolean;
-  /** разрешена ли загрузка карт из сети (по умолчанию — нет: приложение полностью офлайн) */
-  allowDownloads: boolean;
-  /** URL источника карт: PMTiles-файл. Пусто — последняя ежедневная сборка Protomaps (подбирается автоматически). */
-  mapSourceUrl: string;
-  /** найденная автоматически сборка и время находки (мс) */
-  resolvedSource: { url: string; at: number } | null;
-  /** после знакомства уже спрашивали про обзорную карту мира */
-  worldPrompted: boolean;
+  /** онлайн-карта: тайлы подгружаются из сети и кэшируются (по умолчанию выключено — приложение офлайн) */
+  onlineMaps: boolean;
+  /** уже спрашивали про онлайн-карту после знакомства */
+  onlinePrompted: boolean;
+  /** обучение предложено (принято или отклонено) */
+  tutorialSeen: boolean;
+  /** дополнительные слои карты */
+  mapLayers: { subway: boolean; outdoors: boolean; elevation: boolean };
+  /** области, сохранённые для работы без сети */
+  savedAreas: SavedArea[];
+  /** предел кэша просмотренных тайлов, МБ */
+  cacheLimitMb: number;
   /** предлагать скачать карту области при приближении */
   askAreaPrompts: boolean;
+  /** радиус кисти для правки тумана, px */
+  brushPx: number;
+  /** писать трек, пока приложение свёрнуто (Android: служба с уведомлением) */
+  backgroundTracking: boolean;
   /** области, для которых предложение отклонено */
   dismissedAreas: string[];
   /** вес для расчёта калорий, кг */
@@ -64,11 +86,15 @@ export const DEFAULT_PREFS: Prefs = {
   onboarded: false,
   activeMapId: 'bundled:monaco',
   developer: false,
-  allowDownloads: false,
-  mapSourceUrl: '',
-  resolvedSource: null,
-  worldPrompted: false,
+  onlineMaps: false,
+  onlinePrompted: false,
+  tutorialSeen: false,
+  mapLayers: { subway: false, outdoors: false, elevation: false },
+  savedAreas: [],
+  cacheLimitMb: 500,
   askAreaPrompts: true,
+  brushPx: 30,
+  backgroundTracking: false,
   dismissedAreas: [],
   weightKg: 70,
   nickname: '',
