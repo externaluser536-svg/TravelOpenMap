@@ -10,7 +10,7 @@ import { fmtDate, useCover } from '../hooks';
 import type { Note } from '../../data/db';
 import { startNote } from '../../state/actions';
 
-function NoteCard({ note, dist }: { note: Note; dist: number | null }) {
+export function NoteCard({ note, dist }: { note: Note; dist: number | null }) {
   const { t, lang } = useT();
   const units = usePrefs((s) => s.units);
   const cover = useCover(note);

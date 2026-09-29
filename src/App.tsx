@@ -25,6 +25,7 @@ import { MapsSheet } from './ui/sheets/MapsSheet';
 import { ZonesSheet } from './ui/sheets/ZonesSheet';
 import { DataSheet } from './ui/sheets/DataSheet';
 import { PrivacySheet } from './ui/sheets/PrivacySheet';
+import { ClusterSheet } from './ui/sheets/ClusterSheet';
 import { LevelUp, Onboarding, Toasts } from './ui/Overlays';
 import { startLocation } from './services/location';
 import { startCompass } from './services/compass';
@@ -76,6 +77,7 @@ export default function App() {
     const h = CapApp.addListener('backButton', () => {
       const st = useApp.getState();
       if (st.levelUp) st.patch({ levelUp: null });
+      else if (st.mapMenu) st.patch({ mapMenu: null });
       else if (st.sheet) st.patch({ sheet: null });
       else if (st.mode !== 'normal') cancelMode();
       else if (st.screen !== 'map') st.patch({ screen: 'map' });
@@ -114,6 +116,7 @@ export default function App() {
       {sheet?.type === 'workout' && <WorkoutSheet id={sheet.id} />}
       {sheet?.type === 'trip' && <TripSheet id={sheet.id} />}
       {sheet?.type === 'tripEditor' && <TripEditorSheet />}
+      {sheet?.type === 'cluster' && <ClusterSheet ids={sheet.ids} />}
       {screen !== 'map' && screen !== 'workout' && <WorkoutMini />}
       <Toasts />
       <LevelUp />

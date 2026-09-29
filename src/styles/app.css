@@ -3252,3 +3252,190 @@ select.input {
 .mode-panel.wk-panel {
   bottom: calc(var(--tab-total) + 2px);
 }
+
+/* ───────────────────────── группы меток ───────────────────────── */
+.cluster-host {
+  z-index: 2;
+}
+.cluster {
+  position: relative;
+  width: var(--sz, 48px);
+  height: var(--sz, 48px);
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  cursor: pointer;
+  animation: cluster-pop 0.34s cubic-bezier(0.2, 1.6, 0.4, 1) both;
+  filter: drop-shadow(0 6px 10px rgba(2, 8, 22, 0.5));
+  -webkit-tap-highlight-color: transparent;
+  transition: transform 0.15s ease;
+}
+.cluster:active {
+  transform: scale(0.93);
+}
+.cl-halo {
+  position: absolute;
+  inset: -9px;
+  border-radius: 50%;
+  background: radial-gradient(closest-side, color-mix(in srgb, var(--accent) 38%, transparent), transparent);
+  animation: cl-breathe 3.6s ease-in-out infinite;
+  pointer-events: none;
+}
+.cl-ring {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: var(--ring);
+  box-shadow: 0 0 0 2.5px #fff;
+}
+.cl-core {
+  position: absolute;
+  inset: 6px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: var(--bg-2);
+  color: var(--text);
+  box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.9);
+}
+.cl-core b {
+  font-size: calc(var(--sz, 48px) * 0.34);
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+@keyframes cluster-pop {
+  from {
+    transform: scale(0.35);
+    opacity: 0;
+  }
+}
+@keyframes cl-breathe {
+  0%,
+  100% {
+    transform: scale(0.92);
+    opacity: 0.55;
+  }
+  50% {
+    transform: scale(1.08);
+    opacity: 1;
+  }
+}
+
+/* ───────────────────────── меню долгого нажатия ───────────────────────── */
+.press-ring {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  border: 3px solid var(--accent);
+  background: color-mix(in srgb, var(--accent) 22%, transparent);
+  box-shadow: 0 0 0 6px color-mix(in srgb, var(--accent) 18%, transparent);
+  animation: press-in 0.28s cubic-bezier(0.2, 1.6, 0.4, 1) both;
+  pointer-events: none;
+}
+@keyframes press-in {
+  from {
+    transform: scale(0.3);
+    opacity: 0;
+  }
+}
+.menu-backdrop {
+  position: absolute;
+  inset: 0;
+  pointer-events: auto;
+  z-index: 19;
+}
+.map-menu {
+  position: absolute;
+  z-index: 20;
+  pointer-events: auto;
+  border-radius: 22px;
+  padding: 8px;
+  display: grid;
+  gap: 2px;
+  animation: menu-in 0.22s cubic-bezier(0.2, 1.3, 0.4, 1) both;
+  transform-origin: 50% 0;
+}
+.map-menu.above {
+  transform-origin: 50% 100%;
+}
+@keyframes menu-in {
+  from {
+    transform: scale(0.88);
+    opacity: 0;
+  }
+}
+.mm-head {
+  display: grid;
+  gap: 2px;
+  padding: 6px 10px 8px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 4px;
+}
+.mm-head small {
+  color: var(--muted);
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+}
+.mm-item {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  height: 46px;
+  padding: 0 12px;
+  border-radius: 14px;
+  color: var(--text);
+  font-weight: 600;
+  font-size: 14.5px;
+  text-align: left;
+}
+.mm-item svg {
+  color: var(--accent);
+  flex: none;
+}
+.mm-item:hover,
+.mm-item:active {
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+}
+
+/* ───────────────────────── правка тумана ───────────────────────── */
+.fog-panel {
+  pointer-events: auto;
+}
+.fog-panel.is-open .mp-title {
+  color: var(--accent);
+}
+.fog-panel.is-close .mp-title {
+  color: var(--danger);
+}
+.fp-segs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+.fp-size {
+  justify-self: start;
+  font-size: 12.5px;
+  font-weight: 700;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+  color: var(--text);
+}
+.fog-panel.is-close .fp-size {
+  background: color-mix(in srgb, var(--danger) 18%, transparent);
+}
+.fp-note {
+  font-size: 11px;
+  line-height: 1.35;
+}
+@media (max-height: 720px) {
+  .fp-note {
+    display: none;
+  }
+}
+.crosshair.fog {
+  top: 34%;
+}

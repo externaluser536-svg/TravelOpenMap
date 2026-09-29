@@ -11,6 +11,8 @@ import { startCompass } from '../services/compass';
 import { tap } from '../services/haptics';
 import { t } from '../i18n';
 import type { ExclusionZone } from '../core/fog';
+import { FogEditTooLargeError, cellsInCircle, cellsInPolygon, type FogEditAction } from '../core/fogedit';
+import { formatArea } from '../core/geo';
 
 export function startNote(): void {
   const st = useApp.getState();
@@ -27,6 +29,77 @@ export function startNote(): void {
   };
   tap('medium');
   st.patch({ draft, sheet: { type: 'editor' }, mode: 'normal' });
+}
+
+/** Новая заметка в произвольной точке карты (с фото и видео, как обычная). */
+export function startNoteAt(at: { lng: number; lat: number }): void {
+  const draft: NoteDraft = { title: '', text: '', category: 'place', lng: at.lng, lat: at.lat, media: [], removedMediaIds: [], manual: true };
+  tap('medium');
+  useApp.getState().patch({ draft, sheet: { type: 'editor' }, mode: 'normal', mapMenu: null });
+}
+
+export function startMeasureAt(at: { lng: number; lat: number }): void {
+  tap('light');
+  useApp.getState().patch({ mode: 'measure', measurePoints: [{ lng: at.lng, lat: at.lat }], sheet: null, screen: 'map', mapMenu: null });
+}
+
+/** Включает режим ручной правки тумана. Без точки берёт центр карты. */
+export function startFogEdit(action: FogEditAction, at?: { lng: number; lat: number }): void {
+  const st = useApp.getState();
+  const c = at ?? mapApi.fogPoint() ?? st.position ?? { lng: 0, lat: 0 };
+  tap('light');
+  st.patch({
+    mode: 'fogedit',
+    fogDraft: { action, tool: 'circle', lng: c.lng, lat: c.lat, radius: 250, poly: [] },
+    sheet: null,
+    screen: 'map',
+    follow: false,
+    peek: false,
+    mapMenu: null,
+    measurePoints: [],
+    ...(at ? { flyTo: { lng: c.lng, lat: c.lat, zoom: Math.max(mapApi.zoom(), 15.5), nonce: Date.now() } } : {}),
+  });
+}
+
+/** Применяет текущее выделение. Возвращает число изменённых ячеек или null, если область не выбрана/слишком велика. */
+export function applyFogDraft(): number | null {
+  const st = useApp.getState();
+  const d = st.fogDraft;
+  if (!d) return null;
+  let keys: number[];
+  try {
+    keys = d.tool === 'circle' ? cellsInCircle({ lng: d.lng, lat: d.lat }, d.radius) : cellsInPolygon(d.poly);
+  } catch (e) {
+    if (e instanceof FogEditTooLargeError) {
+      st.toast({ kind: 'error', title: t('fogedit.too_big'), icon: 'triangle-alert' });
+      return null;
+    }
+    throw e;
+  }
+  if (!keys.length) {
+    st.toast({ kind: 'info', title: t(d.tool === 'area' ? 'fogedit.need_points' : 'fogedit.nothing'), icon: 'info' });
+    return null;
+  }
+  const r = engine.editFog(d.action, keys);
+  tap('medium');
+  const { units, lang } = usePrefs.getState();
+  st.patch({ fogDraft: { ...d, poly: d.tool === 'area' ? [] : d.poly } });
+  st.toast({
+    kind: 'info',
+    icon: d.action === 'open' ? 'cloud-off' : 'cloud',
+    title: r.changed
+      ? t(d.action === 'open' ? 'fogedit.done_open' : 'fogedit.done_close', { area: formatArea(r.areaM2, units, lang) })
+      : t('fogedit.nothing_changed'),
+  });
+  return r.changed;
+}
+
+export function undoFogEdit(): void {
+  const n = engine.undoFogEdit();
+  if (n) {
+    tap('light');
+    useApp.getState().toast({ kind: 'info', icon: 'undo', title: t('fogedit.undone') });
+  }
 }
 
 export async function editNote(id: string): Promise<void> {
@@ -114,6 +187,7 @@ export function cancelMode(): void {
   const st = useApp.getState();
   if (st.mode === 'pick') st.patch({ mode: 'normal', sheet: { type: 'editor' } });
   else if (st.mode === 'zone') st.patch({ mode: 'normal', zoneDraft: null, sheet: { type: 'zones' } });
+  else if (st.mode === 'fogedit') st.patch({ mode: 'normal', fogDraft: null });
   else st.patch({ mode: 'normal', measurePoints: [] });
 }
 

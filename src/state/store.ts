@@ -13,7 +13,7 @@ import type { MapInfo } from '../map/pmtiles';
 
 export type Screen = 'map' | 'notes' | 'workout' | 'profile';
 export type ProfileTab = 'stats' | 'quests' | 'trips';
-export type MapMode = 'normal' | 'measure' | 'pick' | 'zone';
+export type MapMode = 'normal' | 'measure' | 'pick' | 'zone' | 'fogedit';
 export type GpsStatus = 'off' | 'searching' | 'ok' | 'weak' | 'denied' | 'unavailable';
 
 export interface Fix {
@@ -39,7 +39,8 @@ export type Sheet =
   | { type: 'country'; code: string }
   | { type: 'workout'; id: string }
   | { type: 'trip'; id: string }
-  | { type: 'tripEditor' };
+  | { type: 'tripEditor' }
+  | { type: 'cluster'; ids: string[] };
 
 export interface DraftMedia {
   key: string;
@@ -72,6 +73,25 @@ export interface ZoneDraft {
   lng: number;
   lat: number;
   radius: number;
+}
+
+/** Черновик ручной правки тумана. circle — центр в перекрестии и радиус; area — многоугольник по касаниям. */
+export interface FogDraft {
+  action: 'open' | 'close';
+  tool: 'circle' | 'area';
+  lng: number;
+  lat: number;
+  radius: number;
+  poly: LngLat[];
+}
+
+/** Меню долгого нажатия на карте. */
+export interface MapMenu {
+  lng: number;
+  lat: number;
+  /** экранные координаты нажатия (px относительно карты) */
+  x: number;
+  y: number;
 }
 
 export interface DownloadState {
@@ -136,6 +156,9 @@ export interface AppState {
   measurePoints: LngLat[];
   draft: NoteDraft | null;
   zoneDraft: ZoneDraft | null;
+  fogDraft: FogDraft | null;
+  canUndoFog: boolean;
+  mapMenu: MapMenu | null;
 
   toasts: Toast[];
   levelUp: LevelInfo | null;
@@ -194,6 +217,9 @@ export const useApp = create<AppState>((set, get) => ({
   measurePoints: [],
   draft: null,
   zoneDraft: null,
+  fogDraft: null,
+  canUndoFog: false,
+  mapMenu: null,
 
   toasts: [],
   levelUp: null,

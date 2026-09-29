@@ -3,9 +3,11 @@ import { useApp } from '../state/store';
 import { usePrefs } from '../state/prefs';
 import { useT } from '../i18n';
 import { Icon } from './icons';
-import { CompassRose, ProgressRing } from './common';
+import { CompassRose, ProgressRing, Segmented } from './common';
 import { mapApi } from '../map/MapView';
-import { cancelMode, locateMe, saveZoneDraft, toggleMeasure, togglePeek } from '../state/actions';
+import { applyFogDraft, cancelMode, locateMe, saveZoneDraft, startFogEdit, startMeasureAt, startNoteAt, toggleMeasure, togglePeek, undoFogEdit } from '../state/actions';
+import { polygonAreaM2 } from '../core/fogedit';
+import type { FogDraft } from '../state/store';
 import { cardinal, formatArea, formatCoords, formatDistance, haversine, pathLength } from '../core/geo';
 import { startLocation } from '../services/location';
 import { WorkoutPanel } from './pages/WorkoutPage';
@@ -28,6 +30,7 @@ export function Hud() {
   const patch = useApp((s) => s.patch);
   const orient = useApp((s) => s.orientMap);
   const training = useApp((s) => s.workoutLive !== null);
+  const fogTool = useApp((s) => s.fogDraft?.tool);
 
   const banner = (() => {
     if (mode !== 'normal' || training) return null;
@@ -94,6 +97,9 @@ export function Hud() {
         <button className={`fab glass ${mode === 'measure' ? 'on' : ''}`} onClick={toggleMeasure} aria-label={t('hud.measure')}>
           <Icon name="ruler" />
         </button>
+        <button className="fab glass" onClick={() => startFogEdit('open')} aria-label={t('hud.fogedit')}>
+          <Icon name="brush" />
+        </button>
       </div>
 
       {training && <WorkoutPanel />}
@@ -119,6 +125,9 @@ export function Hud() {
 
       {mode === 'measure' && <MeasurePanel />}
       {(mode === 'pick' || mode === 'zone') && <Crosshair />}
+      {mode === 'fogedit' && fogTool === 'circle' && <Crosshair fog />}
+      {mode === 'fogedit' && <FogEditPanel />}
+      <MapMenuView />
       {mode === 'pick' && <PickPanel />}
       {mode === 'zone' && <ZonePanel />}
     </div>
@@ -167,9 +176,9 @@ function MeasurePanel() {
   );
 }
 
-function Crosshair() {
+function Crosshair({ fog }: { fog?: boolean }) {
   return (
-    <div className="crosshair" aria-hidden>
+    <div className={`crosshair ${fog ? 'fog' : ''}`} aria-hidden>
       <svg width="54" height="54" viewBox="0 0 54 54" fill="none">
         <circle cx="27" cy="27" r="8" stroke="#fff" strokeWidth="2.4" />
         <path d="M27 3v14M27 37v14M3 27h14M37 27h14" stroke="#fff" strokeWidth="2.4" strokeLinecap="round" />
@@ -247,5 +256,140 @@ function ZonePanel() {
         </button>
       </div>
     </div>
+  );
+}
+
+function FogEditPanel() {
+  const { t, lang } = useT();
+  const d = useApp((s) => s.fogDraft);
+  const canUndo = useApp((s) => s.canUndoFog);
+  const patch = useApp((s) => s.patch);
+  const units = usePrefs((s) => s.units);
+  if (!d) return null;
+  const set = (p: Partial<FogDraft>) => patch({ fogDraft: { ...d, ...p } });
+  const open = d.action === 'open';
+  const size = d.tool === 'circle' ? Math.PI * d.radius * d.radius : polygonAreaM2(d.poly);
+  // логарифмический ползунок 30 м … 5 км
+  const slider = Math.round((Math.log(d.radius / 30) / Math.log(5000 / 30)) * 100);
+  const ready = d.tool === 'circle' || d.poly.length >= 3;
+  return (
+    <div className={`mode-panel glass fog-panel ${open ? 'is-open' : 'is-close'}`}>
+      <div className="mp-head">
+        <span className="mp-title">
+          <Icon name="brush" size={16} /> {t('fogedit.title')}
+        </span>
+        <button className="icon-btn" onClick={cancelMode} aria-label="close">
+          <Icon name="x" size={18} />
+        </button>
+      </div>
+      <div className="fp-segs">
+        <Segmented
+          value={d.action}
+          onChange={(v) => set({ action: v })}
+          options={[
+            { value: 'open' as const, label: t('fogedit.open') },
+            { value: 'close' as const, label: t('fogedit.close') },
+          ]}
+        />
+        <Segmented
+          value={d.tool}
+          onChange={(v) => set({ tool: v })}
+          options={[
+            { value: 'circle' as const, label: t('fogedit.tool_circle') },
+            { value: 'area' as const, label: t('fogedit.tool_area') },
+          ]}
+        />
+      </div>
+      {d.tool === 'circle' ? (
+        <>
+          <div className="slider-row">
+            <span>{t('fogedit.radius')}</span>
+            <b>{formatDistance(d.radius, units, lang)}</b>
+          </div>
+          <input
+            type="range"
+            min={0}
+            max={100}
+            value={slider}
+            aria-label={t('fogedit.radius')}
+            onChange={(e) => set({ radius: Math.max(30, Math.round((30 * (5000 / 30) ** (Number(e.target.value) / 100)) / 10) * 10) })}
+          />
+          <p className="mp-hint">{t(open ? 'fogedit.hint_open' : 'fogedit.hint_close')}</p>
+        </>
+      ) : (
+        <p className="mp-hint">
+          {d.poly.length ? t('fogedit.points', { n: d.poly.length }) : t('fogedit.hint_area')}
+        </p>
+      )}
+      {size > 0 && <div className="fp-size">{t('fogedit.area_size', { area: formatArea(size, units, lang) })}</div>}
+      <div className="mp-actions">
+        {d.tool === 'area' && (
+          <>
+            <button className="btn ghost" disabled={!d.poly.length} onClick={() => set({ poly: d.poly.slice(0, -1) })} aria-label={t('fogedit.undo_vertex')}>
+              <Icon name="undo" size={16} />
+            </button>
+            <button className="btn ghost" disabled={!d.poly.length} onClick={() => set({ poly: [] })} aria-label={t('fogedit.clear')}>
+              <Icon name="trash" size={16} />
+            </button>
+          </>
+        )}
+        <button className="btn ghost" disabled={!canUndo} onClick={undoFogEdit}>
+          <Icon name="undo" size={16} /> {t('fogedit.undo_last')}
+        </button>
+      </div>
+      <div className="mp-actions">
+        <button className="btn ghost" onClick={cancelMode}>
+          {t('fogedit.finish')}
+        </button>
+        <button className={`btn grow ${open ? 'primary' : 'danger'}`} disabled={!ready} onClick={() => void applyFogDraft()}>
+          <Icon name={open ? 'cloud-off' : 'cloud'} size={16} /> {t(open ? 'fogedit.apply_open' : 'fogedit.apply_close')}
+        </button>
+      </div>
+      <small className="muted fp-note">{t('fogedit.note')}</small>
+    </div>
+  );
+}
+
+/** Меню долгого нажатия: метка, открыть/закрыть туман, измерить. */
+function MapMenuView() {
+  const { t, lang } = useT();
+  const m = useApp((s) => s.mapMenu);
+  const patch = useApp((s) => s.patch);
+  const pos = useApp((s) => s.position);
+  const units = usePrefs((s) => s.units);
+  if (!m) return null;
+  const W = 252;
+  const root = document.querySelector('.map-root');
+  const vw = root?.clientWidth ?? window.innerWidth;
+  const vh = root?.clientHeight ?? window.innerHeight;
+  const left = Math.max(10, Math.min(vw - W - 10, m.x - W / 2));
+  const below = m.y < vh * 0.55;
+  const style = below ? { left, top: Math.min(vh - 260, m.y + 26) } : { left, bottom: Math.max(10, vh - m.y + 26) };
+  const at = { lng: m.lng, lat: m.lat };
+  return (
+    <>
+      <div className="menu-backdrop" onClick={() => patch({ mapMenu: null })} />
+      <div className={`map-menu glass ${below ? 'below' : 'above'}`} style={{ ...style, width: W }} role="menu">
+        <div className="mm-head">
+          <b>{t('menu.title')}</b>
+          <small>
+            {formatCoords(at)}
+            {pos ? ` · ${t('menu.from_me', { d: formatDistance(haversine(pos, at), units, lang) })}` : ''}
+          </small>
+        </div>
+        <button role="menuitem" className="mm-item" onClick={() => startNoteAt(at)}>
+          <Icon name="pin-plus" size={18} /> {t('menu.note')}
+        </button>
+        <button role="menuitem" className="mm-item" onClick={() => startFogEdit('open', at)}>
+          <Icon name="cloud-off" size={18} /> {t('menu.open')}
+        </button>
+        <button role="menuitem" className="mm-item" onClick={() => startFogEdit('close', at)}>
+          <Icon name="cloud" size={18} /> {t('menu.close')}
+        </button>
+        <button role="menuitem" className="mm-item" onClick={() => startMeasureAt(at)}>
+          <Icon name="ruler" size={18} /> {t('menu.measure')}
+        </button>
+      </div>
+    </>
   );
 }

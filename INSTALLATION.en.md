@@ -25,7 +25,7 @@ Browser geolocation works on `localhost` (use DevTools → Sensors to fake it). 
 ## 3. Tests
 
 ```bash
-npm run typecheck && npm test        # 67 unit tests
+npm run typecheck && npm test        # 84 unit tests
 npm run test:e2e                     # production build, DNS for external hosts disabled, zero-request check + the download gateway is inactive by default
 ```
 

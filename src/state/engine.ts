@@ -1,7 +1,8 @@
 // Движок: превращает GPS-фиксы в открытую карту, статистику, XP и достижения.
 // Единственное место, где живёт «истина» об исследованном мире.
 
-import { FogGrid, cellArea, inAnyZone, keyY, type ExclusionZone } from '../core/fog';
+import { FogGrid, cellArea, cellCenter, inAnyZone, keyX, keyY, type ExclusionZone } from '../core/fog';
+import type { FogEditAction } from '../core/fogedit';
 import { haversine, type LngLat } from '../core/geo';
 import { computeStreaks, dateKey, emptyDay, isActiveDay, lastDays, type DayLog } from '../core/days';
 import {
@@ -294,6 +295,63 @@ class Engine {
     this.publish();
   }
 
+  // ------------------------------------------------------------------ ручная правка тумана
+
+  private lastFogEdit: { action: FogEditAction; keys: number[] } | null = null;
+
+  /**
+   * Принудительно открывает или закрывает ячейки (например, вы бывали здесь до установки приложения).
+   * Открытая площадь идёт в общую статистику и XP, но не в дневные графики и не в дистанцию.
+   * Исключённые зоны при открытии по-прежнему остаются закрытыми.
+   */
+  editFog(action: FogEditAction, keys: readonly number[]): { changed: number; areaM2: number } {
+    const zones = usePrefs.getState().zones;
+    const changedKeys: number[] = [];
+    let areaM2 = 0;
+    for (const k of keys) {
+      const x = keyX(k);
+      const y = keyY(k);
+      if (action === 'open') {
+        if (this.grid.has(x, y)) continue;
+        if (zones.length && inAnyZone(cellCenter(x, y), zones)) continue;
+        this.grid.add(x, y);
+      } else if (!this.grid.remove(x, y)) continue;
+      changedKeys.push(k);
+      areaM2 += cellArea(y);
+    }
+    this.finishFogEdit(action, changedKeys);
+    return { changed: changedKeys.length, areaM2 };
+  }
+
+  get canUndoFogEdit(): boolean {
+    return this.lastFogEdit !== null && this.lastFogEdit.keys.length > 0;
+  }
+
+  /** Отменяет последнюю ручную правку тумана. */
+  undoFogEdit(): number {
+    const e = this.lastFogEdit;
+    if (!e) return 0;
+    const back: FogEditAction = e.action === 'open' ? 'close' : 'open';
+    for (const k of e.keys) {
+      if (back === 'close') this.grid.remove(keyX(k), keyY(k));
+      else this.grid.add(keyX(k), keyY(k));
+    }
+    const n = e.keys.length;
+    this.lastFogEdit = null;
+    this.finishFogEdit(null, []);
+    return n;
+  }
+
+  private finishFogEdit(action: FogEditAction | null, keys: number[]): void {
+    if (action) this.lastFogEdit = keys.length ? { action, keys } : this.lastFogEdit;
+    this.recount();
+    this.grid.version++;
+    if (action === 'open' && keys.length && keys.length <= 4000) for (const cb of this.revealListeners) cb(keys);
+    this.publish();
+    useApp.getState().patch({ canUndoFog: this.canUndoFogEdit });
+    this.scheduleSave();
+  }
+
   private recount(): void {
     this.counted = this.grid.measure(usePrefs.getState().zones);
   }
@@ -465,6 +523,7 @@ class Engine {
     await clearFogStore();
     workoutEngine.discard();
     await workoutEngine.reload();
+    this.lastFogEdit = null;
     this.grid.clear();
     this.days.clear();
     this.tracks.clear();
@@ -479,6 +538,7 @@ class Engine {
 
   /** Полная перезагрузка состояния из БД (после импорта резервной копии). */
   async reloadFromDb(): Promise<void> {
+    this.lastFogEdit = null;
     this.grid.clear();
     this.days.clear();
     this.tracks.clear();

@@ -40,11 +40,14 @@ export function deltaVsPrevious(days: DayLog[], today: string, period: 7 | 30 | 
   return (cur - prev) / prev;
 }
 
-/** Накопленная площадь: точки (индекс дня → накопленное значение), начиная с накопленного «до периода». */
-export function cumulative(all: DayLog[], window: DayLog[], k: 'areaM2' | 'distanceM'): number[] {
+/**
+ * Накопленная площадь: точки (индекс дня → накопленное значение), начиная с накопленного «до периода».
+ * base — то, что не привязано к дням (ручное открытие/закрытие тумана): общая площадь минус сумма по дням.
+ */
+export function cumulative(all: DayLog[], window: DayLog[], k: 'areaM2' | 'distanceM', base = 0): number[] {
   const first = window[0]?.date ?? '';
-  let acc = all.filter((d) => d.date < first).reduce((s, d) => s + d[k], 0);
-  return window.map((d) => (acc += d[k]));
+  let acc = base + all.filter((d) => d.date < first).reduce((s, d) => s + d[k], 0);
+  return window.map((d) => Math.max(0, (acc += d[k])));
 }
 
 /** Средняя дистанция по дням недели (пн…вс) среди недель, где была активность. */

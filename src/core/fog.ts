@@ -99,6 +99,19 @@ export class FogGrid {
     return true;
   }
 
+  /** Убирает ячейку (закрывает туманом). Возвращает true, если она была открыта. */
+  remove(x: number, y: number): boolean {
+    const ck = chunkKeyOf(x >> CHUNK_BITS, y >> CHUNK_BITS);
+    const set = this.chunks.get(ck);
+    if (!set) return false;
+    if (!set.delete(((x & CHUNK_MASK) << CHUNK_BITS) | (y & CHUNK_MASK))) return false;
+    if (!set.size) this.chunks.delete(ck);
+    this.dirty.add(ck);
+    this._count--;
+    this.version++;
+    return true;
+  }
+
   /**
    * Открывает все ячейки, центр которых ближе radiusM к точке p.
    * `allowed` (необязательно) отсеивает ячейки, которые нельзя открывать (исключённые зоны).
@@ -237,7 +250,8 @@ export class FogGrid {
     const out: { key: number; cells: Uint16Array }[] = [];
     for (const ck of this.dirty) {
       const set = this.chunks.get(ck);
-      if (set) out.push({ key: ck, cells: Uint16Array.from(set) });
+      // чанк, опустевший после закрытия, записываем пустым — в БД остаётся актуальное состояние
+      out.push({ key: ck, cells: set ? Uint16Array.from(set) : new Uint16Array(0) });
     }
     this.dirty.clear();
     return out;

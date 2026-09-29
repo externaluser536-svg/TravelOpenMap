@@ -14,7 +14,18 @@ import type { Map as MlMap } from 'maplibre-gl';
 import { CELLS_PER_AXIS, type ExclusionZone, type FogGrid } from '../core/fog';
 import { EQUATOR_M, latToY, lngToX, xToLng, yToLat } from '../core/geo';
 
+/** Выделение области при ручной правке тумана (рисуется поверх тумана). */
+export interface DraftShape {
+  kind: 'circle' | 'poly';
+  action: 'open' | 'close';
+  lng?: number;
+  lat?: number;
+  radius?: number;
+  points?: { lng: number; lat: number }[];
+}
+
 export interface FogOptions {
+  getDraftShape?: () => DraftShape | null;
   getZones: () => ExclusionZone[];
   getDraftZone: () => ExclusionZone | null;
   getOpacity: () => number;
@@ -320,6 +331,7 @@ export class FogRenderer {
 
     this.buildMask({ w, h, cellPx, wx0, wy0, worldSize, sx, sy, map });
     this.drawZones({ w, h, dpr, worldSize, sx, sy });
+    this.drawShape({ worldSize, sx, sy });
     this.view = { w, h, wx0, wy0, worldSize, zones: this.allZones().map((z) => this.zoneScreen(z, { worldSize, sx, sy })) };
     this.maskDirty = false;
   }
@@ -493,6 +505,57 @@ export class FogRenderer {
     const wy = latToY(z.lat) * v.worldSize;
     const mPerWorldPx = (EQUATOR_M * Math.cos((z.lat * Math.PI) / 180)) / v.worldSize;
     return { x: v.sx(wx, wy), y: v.sy(wx, wy), r: z.radius / mPerWorldPx };
+  }
+
+  private drawShape(v: {
+    worldSize: number;
+    sx: (x: number, y: number) => number;
+    sy: (x: number, y: number) => number;
+  }): void {
+    const shape = this.opts.getDraftShape?.();
+    if (!shape) return;
+    const g = this.zctx;
+    const open = shape.action === 'open';
+    const stroke = open ? 'rgba(46,230,166,0.98)' : 'rgba(255,107,129,0.98)';
+    const fill = open ? 'rgba(46,230,166,0.20)' : 'rgba(255,107,129,0.22)';
+    g.save();
+    g.beginPath();
+    let anchors: { x: number; y: number }[] = [];
+    if (shape.kind === 'circle' && shape.lng !== undefined && shape.lat !== undefined && shape.radius) {
+      const c = this.zoneScreen({ id: 'shape', name: '', lng: shape.lng, lat: shape.lat, radius: shape.radius }, v);
+      g.arc(c.x, c.y, c.r, 0, Math.PI * 2);
+    } else if (shape.kind === 'poly' && shape.points?.length) {
+      anchors = shape.points.map((p) => {
+        const wx = lngToX(p.lng) * v.worldSize;
+        const wy = latToY(p.lat) * v.worldSize;
+        return { x: v.sx(wx, wy), y: v.sy(wx, wy) };
+      });
+      anchors.forEach((a, i) => (i ? g.lineTo(a.x, a.y) : g.moveTo(a.x, a.y)));
+      if (anchors.length > 2) g.closePath();
+    } else {
+      g.restore();
+      return;
+    }
+    if (shape.kind === 'circle' || anchors.length > 2) {
+      g.fillStyle = fill;
+      g.fill();
+    }
+    g.lineWidth = 2.5;
+    g.lineJoin = 'round';
+    g.setLineDash([9, 6]);
+    g.strokeStyle = stroke;
+    g.stroke();
+    g.setLineDash([]);
+    for (const a of anchors) {
+      g.beginPath();
+      g.arc(a.x, a.y, 6, 0, Math.PI * 2);
+      g.fillStyle = '#fff';
+      g.fill();
+      g.lineWidth = 3;
+      g.strokeStyle = stroke;
+      g.stroke();
+    }
+    g.restore();
   }
 
   private drawZones(v: {

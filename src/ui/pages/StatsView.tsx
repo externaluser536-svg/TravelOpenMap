@@ -78,7 +78,8 @@ export function StatsView() {
     parts: [toDist(d.distanceM), toDist(d.workoutM ?? 0)],
     tip: `${dayLabel(d.date)}: ${short(toDist(d.distanceM))} ${distUnit}${(d.workoutM ?? 0) > 0 ? ` · ${t('stats.workouts_s')} ${short(toDist(d.workoutM ?? 0))} ${distUnit}` : ''}`,
   }));
-  const cum = cumulative(days, win, 'areaM2').map(toArea);
+  const areaBase = stats.areaM2 - days.reduce((a, d) => a + d.areaM2, 0);
+  const cum = cumulative(days, win, 'areaM2', areaBase).map(toArea);
   const wd = weekdayAverages(days.filter((d) => d.distanceM + (d.workoutM ?? 0) > 0));
   const wdData = wd.map((v, i) => ({ label: weekdayShort(i), parts: [toDist(v)], tip: `${weekdayShort(i)}: ${short(toDist(v))} ${distUnit}` }));
   const hourData = hours.map((m, h) => ({ label: h % 6 === 0 ? String(h) : '', parts: [m], tip: `${String(h).padStart(2, '0')}:00–${String(h + 1).padStart(2, '0')}:00 · ${Math.round(m)} ${t('unit.min')}` }));

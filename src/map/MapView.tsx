@@ -6,12 +6,17 @@ import { useApp } from '../state/store';
 import { usePrefs, resolveTheme } from '../state/prefs';
 import { engine } from '../state/engine';
 import { FogRenderer } from './fog-renderer';
+import { NoteClusters, categoryRing, type ClusterItem } from './clusters';
+import { useT } from '../i18n';
 import { buildStyle } from './style';
 import { registerPmtilesProtocol } from './pmtiles';
 import { categoryById } from '../core/categories';
 import { haversine, pathLength, formatDistance, type LngLat } from '../core/geo';
 import { Icon } from '../ui/icons';
 import { tap } from '../services/haptics';
+
+/** Вертикальное положение перекрестия в режиме правки тумана (доля высоты карты). */
+export const FOG_CROSS_Y = 0.34;
 
 /** Императивный доступ к карте для кнопок интерфейса. */
 export const mapApi = {
@@ -25,6 +30,14 @@ export const mapApi = {
   },
   zoom(): number {
     return this.map?.getZoom() ?? 15;
+  },
+  /** Точка под перекрестием режима правки тумана: выше центра, чтобы её не закрывала нижняя панель. */
+  fogPoint(): LngLat | null {
+    const m = this.map;
+    if (!m) return null;
+    const { clientWidth: w, clientHeight: h } = m.getContainer();
+    const c = m.unproject([w / 2, h * FOG_CROSS_Y]);
+    return { lng: c.lng, lat: c.lat };
   },
 };
 
@@ -75,8 +88,11 @@ export function MapView() {
   const mapRef = useRef<MlMap | null>(null);
   const fogRef = useRef<FogRenderer | null>(null);
   const meRef = useRef<{ marker: Marker; cone: HTMLElement } | null>(null);
-  const pinsRef = useRef(new Map<string, { marker: Marker; el: HTMLElement }>());
-  const [pins, setPins] = useState<{ id: string; el: HTMLElement }[]>([]);
+  const pinsRef = useRef(new Map<string, { marker: Marker; el: HTMLElement; item: ClusterItem }>());
+  const clustersRef = useRef<NoteClusters | null>(null);
+  const syncRef = useRef<() => void>(() => {});
+  const pressRef = useRef<Marker | null>(null);
+  const [pins, setPins] = useState<{ key: string; el: HTMLElement; item: ClusterItem }[]>([]);
   const [ready, setReady] = useState(false);
 
   const mapInfo = useApp((s) => s.mapInfo);
@@ -94,6 +110,8 @@ export function MapView() {
   const measurePoints = useApp((s) => s.measurePoints);
   const appReady = useApp((s) => s.ready);
   const zoneDraft = useApp((s) => s.zoneDraft);
+  const fogDraft = useApp((s) => s.fogDraft);
+  const mapMenu = useApp((s) => s.mapMenu);
   const fogOpacity = usePrefs((s) => s.fogOpacity);
   const fogWind = usePrefs((s) => s.fogWind);
   const screen = useApp((s) => s.screen);
@@ -131,6 +149,14 @@ export function MapView() {
         const z = useApp.getState().zoneDraft;
         return z ? { id: 'draft', name: z.name || '…', lng: z.lng, lat: z.lat, radius: z.radius } : null;
       },
+      getDraftShape: () => {
+        const st = useApp.getState();
+        const d = st.fogDraft;
+        if (st.mode !== 'fogedit' || !d) return null;
+        return d.tool === 'circle'
+          ? { kind: 'circle', action: d.action, lng: d.lng, lat: d.lat, radius: d.radius }
+          : { kind: 'poly', action: d.action, points: d.poly };
+      },
       getOpacity: () => usePrefs.getState().fogOpacity,
       getTheme: () => resolveTheme(usePrefs.getState().theme),
       getWind: () => usePrefs.getState().fogWind,
@@ -165,8 +191,10 @@ export function MapView() {
         rafMove = 0;
         const c = map.getCenter();
         const st = useApp.getState();
+        const fp = st.mode === 'fogedit' && st.fogDraft?.tool === 'circle' ? mapApi.fogPoint() : null;
         if (st.mode === 'pick' && st.draft) st.patch({ draft: { ...st.draft, lng: c.lng, lat: c.lat, manual: true } });
         if (st.mode === 'zone' && st.zoneDraft) st.patch({ zoneDraft: { ...st.zoneDraft, lng: c.lng, lat: c.lat } });
+        if (st.mode === 'fogedit' && st.fogDraft?.tool === 'circle') st.patch({ fogDraft: { ...st.fogDraft, lng: fp?.lng ?? c.lng, lat: fp?.lat ?? c.lat } });
         const [w, s, e, n] = mapInfo.bounds;
         const missing = c.lng < w || c.lng > e || c.lat < s || c.lat > n;
         if (missing !== st.mapMissing) st.patch({ mapMissing: missing });
@@ -174,11 +202,78 @@ export function MapView() {
     });
 
     map.on('click', (e) => {
-      if (useApp.getState().mode !== 'measure') return;
       const st = useApp.getState();
-      st.patch({ measurePoints: [...st.measurePoints, { lng: e.lngLat.lng, lat: e.lngLat.lat }] });
-      tap('light');
+      if (Date.now() < suppressClickUntil) return;
+      if (st.mapMenu) st.patch({ mapMenu: null });
+      if (st.mode === 'measure') {
+        st.patch({ measurePoints: [...st.measurePoints, { lng: e.lngLat.lng, lat: e.lngLat.lat }] });
+        tap('light');
+      } else if (st.mode === 'fogedit' && st.fogDraft?.tool === 'area') {
+        st.patch({ fogDraft: { ...st.fogDraft, poly: [...st.fogDraft.poly, { lng: e.lngLat.lng, lat: e.lngLat.lat }] } });
+        tap('light');
+      }
     });
+
+    // ---- долгое нажатие / правая кнопка: меню «метка, туман, измерение»
+    let suppressClickUntil = 0;
+    const host = map.getCanvasContainer();
+    let pressTimer = 0;
+    let pressStart = { x: 0, y: 0 };
+    const cancelPress = () => {
+      clearTimeout(pressTimer);
+      pressTimer = 0;
+    };
+    const openMenu = (clientX: number, clientY: number) => {
+      const st = useApp.getState();
+      if (st.mode !== 'normal' || st.workoutLive !== null) return;
+      const r = host.getBoundingClientRect();
+      const x = clientX - r.left;
+      const y = clientY - r.top;
+      const ll = map.unproject([x, y]);
+      suppressClickUntil = Date.now() + 500;
+      tap('medium');
+      st.patch({ mapMenu: { lng: ll.lng, lat: ll.lat, x, y }, follow: false });
+    };
+    const ignoreTarget = (t: EventTarget | null) => !!(t as HTMLElement | null)?.closest?.('.pin-host, .cluster-host, .me');
+    const onDown = (e: PointerEvent) => {
+      if (!e.isPrimary || (e.pointerType === 'mouse' && e.button !== 0) || ignoreTarget(e.target)) {
+        cancelPress();
+        return;
+      }
+      pressStart = { x: e.clientX, y: e.clientY };
+      cancelPress();
+      pressTimer = window.setTimeout(() => {
+        pressTimer = 0;
+        openMenu(pressStart.x, pressStart.y);
+      }, 550);
+    };
+    const onMovePtr = (e: PointerEvent) => {
+      if (pressTimer && Math.hypot(e.clientX - pressStart.x, e.clientY - pressStart.y) > 10) cancelPress();
+    };
+    const onCtx = (e: MouseEvent) => {
+      e.preventDefault();
+      if (!ignoreTarget(e.target)) openMenu(e.clientX, e.clientY);
+    };
+    host.addEventListener('pointerdown', onDown);
+    host.addEventListener('pointermove', onMovePtr);
+    host.addEventListener('pointerup', cancelPress);
+    host.addEventListener('pointercancel', cancelPress);
+    host.addEventListener('contextmenu', onCtx);
+    map.on('movestart', () => {
+      cancelPress();
+      if (useApp.getState().mapMenu) useApp.getState().patch({ mapMenu: null });
+    });
+
+    // ---- группировка меток: пересчёт при смене целого zoom и по окончании движения
+    let lastZ = -1;
+    map.on('zoom', () => {
+      const z = Math.floor(map.getZoom());
+      if (z !== lastZ) {
+        lastZ = z;
+        syncRef.current();
+      }
+    });
+    map.on('moveend', () => syncRef.current());
 
     map.once('idle', () => {
       setReady(true);
@@ -192,6 +287,13 @@ export function MapView() {
     }
 
     return () => {
+      cancelPress();
+      host.removeEventListener('pointerdown', onDown);
+      host.removeEventListener('pointermove', onMovePtr);
+      host.removeEventListener('pointerup', cancelPress);
+      host.removeEventListener('pointercancel', cancelPress);
+      host.removeEventListener('contextmenu', onCtx);
+      pinsRef.current.clear();
       offReveal();
       fog.destroy();
       map.remove();
@@ -256,7 +358,7 @@ export function MapView() {
   }, [peek, training, ready]);
   useEffect(() => {
     fogRef.current?.requestDraw();
-  }, [fogOpacity, zones, zoneDraft, appReady, ready, theme]);
+  }, [fogOpacity, zones, zoneDraft, fogDraft, appReady, ready, theme]);
   useEffect(() => {
     fogRef.current?.refresh();
   }, [fogWind, screen, peek, training]);
@@ -265,7 +367,16 @@ export function MapView() {
   // ---------------------------------------------------------------- камера
   useEffect(() => {
     if (flyTo && mapRef.current) {
-      mapRef.current.flyTo({ center: [flyTo.lng, flyTo.lat], zoom: flyTo.zoom ?? Math.max(mapRef.current.getZoom(), 15), duration: 900, essential: true });
+      const m = mapRef.current;
+      const fog = useApp.getState().mode === 'fogedit';
+      const h = m.getContainer().clientHeight;
+      m.flyTo({
+        center: [flyTo.lng, flyTo.lat],
+        zoom: flyTo.zoom ?? Math.max(m.getZoom(), 15),
+        duration: 900,
+        essential: true,
+        ...(fog ? { offset: [0, (FOG_CROSS_Y - 0.5) * h] as [number, number] } : {}),
+      });
     }
   }, [flyTo]);
 
@@ -318,31 +429,57 @@ export function MapView() {
     if (h !== null) me.cone.style.transform = `rotate(${h - mapBearing}deg)`;
   }, [heading, mapBearing, position]);
 
-  // ---------------------------------------------------------------- маркеры заметок
+  // ---------------------------------------------------------------- метка нажатия (пока открыто меню)
+  useEffect(() => {
+    const map = mapRef.current;
+    pressRef.current?.remove();
+    pressRef.current = null;
+    if (!map || !mapMenu) return;
+    const el = document.createElement('div');
+    el.className = 'press-ring';
+    pressRef.current = new Marker({ element: el, anchor: 'center' }).setLngLat([mapMenu.lng, mapMenu.lat]).addTo(map);
+    return () => {
+      pressRef.current?.remove();
+      pressRef.current = null;
+    };
+  }, [mapMenu, ready]);
+
+  // ---------------------------------------------------------------- метки заметок с группировкой
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
+    clustersRef.current = new NoteClusters(notes);
     const have = pinsRef.current;
-    const ids = new Set(notes.map((n) => n.id));
-    for (const [id, p] of have) {
-      if (!ids.has(id)) {
-        p.marker.remove();
-        have.delete(id);
+    syncRef.current = () => {
+      const idx = clustersRef.current;
+      if (!idx || !mapRef.current) return;
+      const m = mapRef.current;
+      const b = m.getBounds();
+      const padLng = (b.getEast() - b.getWest()) * 0.25;
+      const padLat = (b.getNorth() - b.getSouth()) * 0.25;
+      const view = idx.view([Math.max(-180, b.getWest() - padLng), Math.max(-85, b.getSouth() - padLat), Math.min(180, b.getEast() + padLng), Math.min(85, b.getNorth() + padLat)], m.getZoom());
+      const keep = new Set(view.map((i) => i.key));
+      for (const [key, p] of have) {
+        if (!keep.has(key)) {
+          p.marker.remove();
+          have.delete(key);
+        }
       }
-    }
-    for (const n of notes) {
-      let p = have.get(n.id);
-      if (!p) {
+      for (const item of view) {
+        const p = have.get(item.key);
+        if (p) {
+          p.marker.setLngLat([item.lng, item.lat]);
+          p.item = item;
+          continue;
+        }
         const el = document.createElement('div');
-        el.className = 'pin-host';
-        const marker = new Marker({ element: el, anchor: 'bottom', subpixelPositioning: true }).setLngLat([n.lng, n.lat]).addTo(map);
-        p = { marker, el };
-        have.set(n.id, p);
-      } else {
-        p.marker.setLngLat([n.lng, n.lat]);
+        el.className = item.kind === 'pin' ? 'pin-host' : 'cluster-host';
+        const marker = new Marker({ element: el, anchor: item.kind === 'pin' ? 'bottom' : 'center', subpixelPositioning: true }).setLngLat([item.lng, item.lat]).addTo(m);
+        have.set(item.key, { marker, el, item });
       }
-    }
-    setPins([...have].map(([id, p]) => ({ id, el: p.el })));
+      setPins([...have].map(([key, p]) => ({ key, el: p.el, item: p.item })));
+    };
+    syncRef.current();
   }, [notes, ready]);
 
   const noteById = new Map(notes.map((n) => [n.id, n]));
@@ -350,8 +487,26 @@ export function MapView() {
   return (
     <div className="map-root">
       <div ref={ref} className="map-canvas" />
-      {pins.map(({ id, el }) => {
-        const n = noteById.get(id);
+      {pins.map(({ key, el, item }) => {
+        if (item.kind === 'cluster') {
+          return createPortal(
+            <ClusterBubble
+              item={item}
+              onOpen={() => {
+                const m = mapRef.current;
+                const idx = clustersRef.current;
+                if (!m || !idx) return;
+                tap('light');
+                const z = idx.expansionZoom(item.clusterId);
+                if (z > m.getMaxZoom()) useApp.getState().patch({ sheet: { type: 'cluster', ids: idx.leaves(item.clusterId) } });
+                else m.easeTo({ center: [item.lng, item.lat], zoom: Math.min(m.getMaxZoom(), z + 0.15), duration: 520, essential: true });
+              }}
+            />,
+            el,
+            key,
+          );
+        }
+        const n = noteById.get(item.id);
         if (!n) return null;
         const cat = categoryById(n.category);
         return createPortal(
@@ -373,10 +528,33 @@ export function MapView() {
             <span className="pin-tip" />
           </button>,
           el,
-          id,
+          key,
         );
       })}
     </div>
+  );
+}
+
+/** Значок группы меток: счётчик в центре, кольцо показывает долю категорий. */
+function ClusterBubble({ item, onOpen }: { item: Extract<ClusterItem, { kind: 'cluster' }>; onOpen: () => void }) {
+  const { t } = useT();
+  const size = Math.round(42 + Math.min(20, Math.log2(item.count) * 5));
+  return (
+    <button
+      className="cluster"
+      style={{ ['--ring' as string]: categoryRing(item.cats, (id) => categoryById(id).color), ['--sz' as string]: `${size}px` }}
+      aria-label={t('cluster.label', { n: item.count })}
+      onClick={(e) => {
+        e.stopPropagation();
+        onOpen();
+      }}
+    >
+      <span className="cl-halo" />
+      <span className="cl-ring" />
+      <span className="cl-core">
+        <b>{item.count > 99 ? '99+' : item.count}</b>
+      </span>
+    </button>
   );
 }
 

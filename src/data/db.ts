@@ -234,7 +234,10 @@ export async function saveFogChunks(chunks: { key: number; cells: Uint16Array }[
   if (!chunks.length) return;
   const db = await getDb();
   const tx = db.transaction('fog', 'readwrite');
-  for (const c of chunks) tx.store.put(c);
+  for (const c of chunks) {
+    if (c.cells.length) tx.store.put(c);
+    else tx.store.delete(c.key);
+  }
   await tx.done;
 }
 

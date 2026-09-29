@@ -107,6 +107,25 @@ try {
   }
   await page.waitForTimeout(1500);
 
+  // 3а) долгое нажатие → меню; ручное открытие и отмена тумана — тоже без сети
+  await dismiss();
+  const areaBeforeEdit = await area();
+  await page.mouse.move(200, 420);
+  await page.mouse.down();
+  await page.waitForTimeout(900);
+  await page.mouse.up();
+  check((await page.locator('.map-menu').count()) === 1, 'долгое нажатие на карте открывает меню «метка / туман / измерение»');
+  await page.locator('.map-menu .mm-item').nth(1).click(); // «Открыть туман здесь»
+  await page.waitForSelector('.fog-panel');
+  await page.waitForTimeout(1500);
+  await page.locator('.fog-panel .btn.primary').click();
+  await page.waitForTimeout(1200);
+  await page.locator('.fog-panel .icon-btn').click();
+  await dismiss();
+  await page.waitForTimeout(500);
+  const areaAfterEdit = await area();
+  check(areaBeforeEdit !== areaAfterEdit, 'ручное открытие тумана увеличивает открытую площадь', `${areaBeforeEdit} → ${areaAfterEdit}`);
+
   // экран приватности (измеряет ресурсы изнутри приложения). Порядок вкладок: карта, заметки, «+», спорт, профиль
   await dismiss();
   await page.locator('.tab').nth(3).click(); // профиль (в .tab «+» не входит)

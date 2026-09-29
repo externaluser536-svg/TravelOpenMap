@@ -218,6 +218,20 @@ async function scenes(theme, lang, which) {
     await click(page, '.chip-btn', 1); await page.waitForTimeout(500); await s('25b-trip-editor');
     await closeSheet(page);
   }
+  if (want('mapedit')) {
+    // группы меток, меню долгого нажатия, правка тумана (круг — открыть, область — закрыть)
+    await tab(page, 'map'); await jump(page, 13.4); await page.waitForTimeout(1600); await s('29-clusters');
+    await jump(page, 15.6); await page.waitForTimeout(900);
+    await page.mouse.move(120, 300); await page.mouse.down(); await page.waitForTimeout(800); await page.mouse.up();
+    await s('30-menu');
+    await click(page, '.mm-item', 1); await page.waitForTimeout(1800);
+    await s('31-fog-open');
+    await click(page, '.fog-panel .fp-segs .seg:nth-child(1) button', 1);
+    await click(page, '.fog-panel .fp-segs .seg:nth-child(2) button', 1);
+    for (const [x, y] of [[60, 150], [330, 130], [340, 330], [90, 340]]) { await page.mouse.click(x, y); await page.waitForTimeout(150); }
+    await s('32-fog-area');
+    await click(page, '.fog-panel .icon-btn');
+  }
   if (want('levelup')) {
     await tab(page, 'map');
     await page.evaluate(() => { const st = window.__tom.useApp.getState(); st.patch({ levelUp: { ...st.level, level: st.level.level + 1 } }); st.toast({ kind: 'quest', title: 'Соседний район', text: 'Челлендж выполнен!', icon: 'map', xp: 80 }); });
@@ -238,9 +252,9 @@ async function onboarding(lang) {
 try {
   await onboarding('ru');
   await scenes('dark', 'ru');
-  await scenes('light', 'ru', ['map', 'overview', 'peek', 'quests', 'stats', 'note', 'workout', 'trips']);
+  await scenes('light', 'ru', ['map', 'overview', 'peek', 'quests', 'stats', 'note', 'workout', 'trips', 'mapedit']);
   // английский интерфейс — только ключевые экраны
-  await scenes('dark', 'en', ['map', 'quests', 'stats', 'note', 'privacy', 'workout', 'trips', 'countries']);
+  await scenes('dark', 'en', ['map', 'quests', 'stats', 'note', 'privacy', 'workout', 'trips', 'countries', 'mapedit']);
 
   // ---- обзор с рамками устройств
   const img = async (p) => `data:image/png;base64,${(await readFile(join(OUT, p))).toString('base64')}`;
@@ -268,6 +282,10 @@ try {
     ['ru-dark/09b-charts.png', 'Статистика в графиках'], ['ru-dark/19-workout-live.png', 'Тренировка: бег и ходьба'], ['ru-dark/21-workout-detail.png', 'Маршрут и площадь охвата'],
     ['ru-dark/22-trips.png', 'Планы поездок'], ['ru-dark/27-country.png', 'Карты по странам'],
   ], 'TravelOpenMap 0.2', 'Тренировки · графики · планировщик поездок · загрузка карт по странам');
+  await sheet('overview-ru-3.png', [
+    ['ru-dark/29-clusters.png', 'Метки собираются в группы'], ['ru-dark/30-menu.png', 'Долгое нажатие: метка в любом месте'], ['ru-dark/31-fog-open.png', 'Открыть туман кругом'],
+    ['ru-dark/32-fog-area.png', 'Закрыть область'],
+  ], 'TravelOpenMap 0.3', 'Группировка меток · метки в любом месте · ручная правка тумана');
   await sheet('overview-en.png', [
     ['en-dark/01-map.png', 'The fog clears as you walk'], ['en-dark/05-note.png', 'Notes with photos & video'], ['en-dark/07-quests.png', 'Levels & challenges'],
     ['en-dark/09b-charts.png', 'Stats in charts'], ['en-dark/14-privacy.png', 'Zero external requests'],
@@ -276,6 +294,10 @@ try {
     ['en-dark/19-workout-live.png', 'Workouts: run & walk'], ['en-dark/22-trips.png', 'Trip planner'], ['en-dark/27-country.png', 'Country maps'],
     ['en-dark/21-workout-detail.png', 'Route & covered area'], ['en-dark/09c-calendar.png', 'Activity calendar'],
   ], 'TravelOpenMap 0.2', 'Workouts · charts · trip planner · country map downloads');
+  await sheet('overview-en-3.png', [
+    ['en-dark/29-clusters.png', 'Pins group into clusters'], ['en-dark/30-menu.png', 'Long-press: pin anywhere'], ['en-dark/31-fog-open.png', 'Reveal fog with a circle'],
+    ['en-dark/32-fog-area.png', 'Cover an area'],
+  ], 'TravelOpenMap 0.3', 'Pin clustering · pins anywhere · manual fog editing');
   const { before, after } = await optimizeDir(OUT);
   console.log(`  ✓ PNG сжаты: ${(before / 1e6).toFixed(1)} → ${(after / 1e6).toFixed(1)} МБ`);
 } finally {
