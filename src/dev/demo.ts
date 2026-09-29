@@ -9,7 +9,11 @@ import route from './demo-route.json';
 import { engine } from '../state/engine';
 import { useApp } from '../state/store';
 import { usePrefs } from '../state/prefs';
-import { putMedia, uid, type Note } from '../data/db';
+import { clearTrips, putMedia, uid, type Note } from '../data/db';
+import { workoutEngine } from '../state/workoutEngine';
+import { addDaysKey, todayKey, CHECKLIST_TEMPLATE } from '../core/trips';
+import { draftTrip, saveTrip, loadTrips } from '../state/trips';
+import { t } from '../i18n';
 import { haversine } from '../core/geo';
 
 type P = [number, number];
@@ -240,6 +244,78 @@ function play(from: number, to: number, endT: number): void {
   void n;
 }
 
+/** Тренировки по реальным участкам маршрута: разные типы, скорости и набор высоты. */
+async function seedWorkouts(now: number): Promise<void> {
+  const plan: { ago: number; type: 'run' | 'walk'; from: number; to: number; speed: number; hour: number }[] = [
+    { ago: 9, type: 'run', from: 40, to: 380, speed: 3.05, hour: 7 },
+    { ago: 7, type: 'walk', from: 100, to: 330, speed: 1.4, hour: 18 },
+    { ago: 5, type: 'run', from: 180, to: 560, speed: 3.3, hour: 6 },
+    { ago: 3, type: 'run', from: 20, to: 250, speed: 2.9, hour: 19 },
+    { ago: 1, type: 'run', from: 300, to: 700, speed: 3.45, hour: 7 },
+    { ago: 0, type: 'walk', from: 500, to: 640, speed: 1.5, hour: 8 },
+  ];
+  for (const w of plan) {
+    const t0 = new Date(now - w.ago * DAY);
+    t0.setHours(w.hour, 10, 0, 0);
+    const step = 8 / w.speed; // секунд на 8 м
+    const tr = workoutEngine.startAt(w.type, Math.min(t0.getTime(), now - 3600_000));
+    for (let i = w.from; i < w.to; i++) {
+      const tt = tr.startedAt + (i - w.from) * step * 1000;
+      tr.addFix({ lng: ROUTE[i][0], lat: ROUTE[i][1], t: tt, accuracy: 6, alt: 22 + 14 * Math.sin(i / 38) + i * 0.012, altAccuracy: 4 });
+    }
+    // замыкаем часть тренировок в петлю: возвращаемся к старту по прямой
+    if (w.ago === 3) {
+      const back = ROUTE[w.from];
+      const tt = tr.startedAt + (w.to - w.from) * step * 1000;
+      tr.addFix({ lng: (ROUTE[w.to - 1][0] + back[0]) / 2, lat: (ROUTE[w.to - 1][1] + back[1]) / 2, t: tt + 40_000, accuracy: 6 });
+      tr.addFix({ lng: back[0], lat: back[1], t: tt + 80_000, accuracy: 6 });
+    }
+    const rec = tr.finish(tr.startedAt + (w.to - w.from) * step * 1000 + 90_000, uid());
+    await workoutEngine.insert(rec);
+  }
+  workoutEngine.discard();
+}
+
+/** Поездки: разные статусы, страны, даты, план, чек-лист и расходы. */
+async function seedTrips(): Promise<void> {
+  await clearTrips();
+  const today = todayKey();
+  const en = usePrefs.getState().lang === 'en';
+  const mk = (code: string, o: Partial<import('../data/db').Trip>) => ({ ...draftTrip(code), ...o });
+  const tripA = mk('PT', {
+    title: en ? 'Autumn in Lisbon' : 'Осень в Лиссабоне',
+    destination: en ? 'Lisbon · Sintra · Cascais' : 'Лиссабон · Синтра · Кашкайш',
+    startDate: addDaysKey(today, 19),
+    endDate: addDaysKey(today, 26),
+    status: 'booked',
+    transport: 'plane',
+    travelers: 2,
+    budget: 1800,
+    currency: 'EUR',
+    notes: en ? 'Flights booked, hotel in Alfama. Try pastel de nata in Belém, tram 28 early in the morning.' : 'Билеты куплены, отель в Алфаме. Паштел-де-ната в Белене, трамвай №28 — рано утром.',
+  });
+  tripA.items = [
+    { id: uid(), date: addDaysKey(today, 19), time: '14:30', title: en ? 'Arrival, check-in' : 'Прилёт, заселение', place: 'Alfama', done: false },
+    { id: uid(), date: addDaysKey(today, 20), time: '10:00', title: en ? 'Belém Tower & pastéis' : 'Башня Белен и паштел-де-ната', place: 'Belém' },
+    { id: uid(), date: addDaysKey(today, 20), time: '19:30', title: en ? 'Fado dinner' : 'Ужин с фаду', place: 'Bairro Alto' },
+    { id: uid(), date: addDaysKey(today, 22), time: '09:00', title: en ? 'Day trip to Sintra' : 'Поездка в Синтру', place: 'Pena Palace' },
+    { id: uid(), date: addDaysKey(today, 24), time: '11:00', title: en ? 'Cascais & Cabo da Roca' : 'Кашкайш и мыс Рока', place: 'Cascais' },
+  ];
+  tripA.checklist = CHECKLIST_TEMPLATE.flatMap((g) => g.keys.map((k, i) => ({ id: uid(), text: t(`check.${k}`), done: (g.group === 'docs' && i < 5) || (g.group === 'tech' && i < 2), group: g.group })));
+  tripA.expenses = [
+    { id: uid(), title: en ? 'Flights ×2' : 'Авиабилеты ×2', amount: 420, category: 'transport' },
+    { id: uid(), title: en ? 'Hotel, 7 nights' : 'Отель, 7 ночей', amount: 780, category: 'stay' },
+    { id: uid(), title: en ? 'Sintra tickets' : 'Билеты в Синтру', amount: 64, category: 'fun' },
+    { id: uid(), title: en ? 'Food (advance)' : 'Еда (аванс)', amount: 150, category: 'food' },
+  ];
+  const tripB = mk('JP', { title: en ? 'Japan: cherry blossoms' : 'Япония: сакура', destination: 'Tokyo · Kyoto', startDate: addDaysKey(today, 165), endDate: addDaysKey(today, 178), status: 'planned', transport: 'plane', travelers: 2, budget: 4200, currency: 'EUR' });
+  const tripC = mk('IS', { title: en ? 'Iceland road trip' : 'Исландия на машине', destination: en ? 'Ring Road' : 'Кольцевая дорога', status: 'idea', transport: 'car', travelers: 3, budget: 3000, currency: 'EUR' });
+  const tripD = mk('IT', { title: en ? 'Italy in spring' : 'Италия весной', destination: 'Rome · Florence', startDate: addDaysKey(today, -170), endDate: addDaysKey(today, -162), status: 'done', transport: 'train', travelers: 2, budget: 2200, currency: 'EUR' });
+  tripD.expenses = [{ id: uid(), title: en ? 'Trains' : 'Поезда', amount: 310, category: 'transport' }, { id: uid(), title: en ? 'Hotels' : 'Отели', amount: 1100, category: 'stay' }, { id: uid(), title: en ? 'Food' : 'Еда', amount: 520, category: 'food' }, { id: uid(), title: en ? 'Museums' : 'Музеи', amount: 190, category: 'fun' }];
+  for (const tr of [tripD, tripC, tripB, tripA]) await saveTrip(tr);
+  await loadTrips();
+}
+
 export async function seedDemo(): Promise<void> {
   engine.quiet = true;
   await engine.resetAll();
@@ -307,6 +383,9 @@ export async function seedDemo(): Promise<void> {
     k++;
   }
 
+  await seedWorkouts(now);
+  await seedTrips();
+
   await engine.flush();
   await engine.reloadFromDb();
   engine.quiet = false;
@@ -323,7 +402,7 @@ export async function seedDemo(): Promise<void> {
   });
 }
 
-const tom = { engine, useApp, usePrefs, seedDemo, route: ROUTE };
+const tom = { engine, useApp, usePrefs, seedDemo, route: ROUTE, workoutEngine };
 (window as unknown as { __tom: typeof tom }).__tom = tom;
 
 // http://localhost:5173/?demo — сразу загрузить демо-данные

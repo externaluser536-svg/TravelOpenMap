@@ -16,6 +16,8 @@ export interface Prefs {
   revealRadius: number;
   /** плотность тумана 0.5…1 */
   fogOpacity: number;
+  /** ветер в тумане: 0 — выкл, 1 — лёгкий, 2 — сильный */
+  fogWind: number;
   /** игнорировать GPS-фиксы хуже этой точности, м */
   minAccuracy: number;
   recordTrack: boolean;
@@ -25,6 +27,12 @@ export interface Prefs {
   onboarded: boolean;
   activeMapId: string;
   developer: boolean;
+  /** разрешена ли загрузка карт из сети (по умолчанию — нет: приложение полностью офлайн) */
+  allowDownloads: boolean;
+  /** URL источника карт: PMTiles-файл (например, сборка Protomaps) */
+  mapSourceUrl: string;
+  /** вес для расчёта калорий, кг */
+  weightKg: number;
 }
 
 export const DEFAULT_PREFS: Prefs = {
@@ -33,6 +41,7 @@ export const DEFAULT_PREFS: Prefs = {
   theme: 'auto',
   revealRadius: 60,
   fogOpacity: 0.95,
+  fogWind: 1,
   minAccuracy: 60,
   recordTrack: true,
   haptics: true,
@@ -41,6 +50,9 @@ export const DEFAULT_PREFS: Prefs = {
   onboarded: false,
   activeMapId: 'bundled:monaco',
   developer: false,
+  allowDownloads: false,
+  mapSourceUrl: '',
+  weightKg: 70,
 };
 
 interface PrefsStore extends Prefs {

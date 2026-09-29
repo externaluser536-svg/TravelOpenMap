@@ -1,6 +1,6 @@
 {
   "name": "travelopenmap",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "description": "TravelOpenMap — офлайн-дневник путешествий с туманом войны на картах OpenStreetMap",
   "license": "MIT",
@@ -56,7 +56,8 @@
     "sharp": "^0.35.5",
     "typescript": "^7.0.2",
     "vite": "^8.3.1",
-    "vitest": "^5.0.2"
+    "vitest": "^5.0.2",
+    "world-countries": "^5.1.0"
   },
   "engines": {
     "node": ">=20"

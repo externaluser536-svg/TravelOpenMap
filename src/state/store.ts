@@ -5,10 +5,14 @@ import type { Stats, ChallengeState, DailyQuest } from '../core/challenges';
 import { EMPTY_STATS } from '../core/challenges';
 import { levelFromXp, type LevelInfo } from '../core/levels';
 import type { LngLat } from '../core/geo';
-import type { Note } from '../data/db';
+import type { Note, Trip, Workout, WorkoutType } from '../data/db';
+import type { DayLog } from '../core/days';
+import type { LiveStats } from '../core/workout';
+import type { Progress } from '../map/gateway-client';
 import type { MapInfo } from '../map/pmtiles';
 
-export type Screen = 'map' | 'notes' | 'quests' | 'profile';
+export type Screen = 'map' | 'notes' | 'workout' | 'profile';
+export type ProfileTab = 'stats' | 'quests' | 'trips';
 export type MapMode = 'normal' | 'measure' | 'pick' | 'zone';
 export type GpsStatus = 'off' | 'searching' | 'ok' | 'weak' | 'denied' | 'unavailable';
 
@@ -30,7 +34,12 @@ export type Sheet =
   | { type: 'maps' }
   | { type: 'zones' }
   | { type: 'data' }
-  | { type: 'privacy' };
+  | { type: 'privacy' }
+  | { type: 'countries' }
+  | { type: 'country'; code: string }
+  | { type: 'workout'; id: string }
+  | { type: 'trip'; id: string }
+  | { type: 'tripEditor' };
 
 export interface DraftMedia {
   key: string;
@@ -65,6 +74,14 @@ export interface ZoneDraft {
   radius: number;
 }
 
+export interface DownloadState {
+  code: string;
+  name: string;
+  state: 'running' | 'done' | 'error';
+  progress?: Progress;
+  error?: string;
+}
+
 export interface Toast {
   id: number;
   kind: 'quest' | 'info' | 'error' | 'daily';
@@ -76,6 +93,7 @@ export interface Toast {
 
 export interface AppState {
   screen: Screen;
+  profileTab: ProfileTab;
   sheet: Sheet;
   mode: MapMode;
   peek: boolean;
@@ -96,7 +114,19 @@ export interface AppState {
   challenges: ChallengeState[];
   quests: DailyQuest[];
   lastDays: { date: string; distanceM: number; areaM2: number; notes: number }[];
+  /** вся история по дням (для графиков) */
+  allDays: DayLog[];
+  /** минуты движения по часам суток */
+  hours: number[];
   ready: boolean;
+
+  workouts: Workout[];
+  /** активная тренировка (null — нет) */
+  workoutLive: (LiveStats & { type: WorkoutType }) | null;
+  workoutRoute: [number, number][];
+  trips: Trip[];
+  tripDraft: Trip | null;
+  download: DownloadState | null;
 
   mapInfo: MapInfo | null;
   mapMissing: boolean;
@@ -124,6 +154,7 @@ let toastId = 1;
 
 export const useApp = create<AppState>((set, get) => ({
   screen: 'map',
+  profileTab: 'stats',
   sheet: null,
   mode: 'normal',
   peek: false,
@@ -144,7 +175,16 @@ export const useApp = create<AppState>((set, get) => ({
   challenges: [],
   quests: [],
   lastDays: [],
+  allDays: [],
+  hours: Array(24).fill(0),
   ready: false,
+
+  workouts: [],
+  workoutLive: null,
+  workoutRoute: [],
+  trips: [],
+  tripDraft: null,
+  download: null,
 
   mapInfo: null,
   mapMissing: false,

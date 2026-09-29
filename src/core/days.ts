@@ -7,6 +7,8 @@ export interface DayLog {
   areaM2: number;
   distanceM: number;
   notes: number;
+  /** расстояние тренировок за день, м (не сохраняется в БД — добавляется при агрегации) */
+  workoutM?: number;
 }
 
 export function dateKey(t: number = Date.now()): string {
@@ -19,7 +21,7 @@ export function dateKey(t: number = Date.now()): string {
 export const emptyDay = (date: string): DayLog => ({ date, cells: 0, areaM2: 0, distanceM: 0, notes: 0 });
 
 export function isActiveDay(d: DayLog): boolean {
-  return d.distanceM >= 100 || d.cells > 0 || d.notes > 0;
+  return d.distanceM >= 100 || d.cells > 0 || d.notes > 0 || (d.workoutM ?? 0) >= 100;
 }
 
 function addDays(date: string, delta: number): string {

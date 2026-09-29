@@ -16,6 +16,10 @@ export interface Stats {
   bestDayDistanceM: number;
   earlyNotes: number;
   nightNotes: number;
+  /** тренировки */
+  workouts: number;
+  workoutDistanceM: number;
+  longestRunM: number;
   today: { cells: number; areaM2: number; distanceM: number; notes: number };
 }
 
@@ -33,10 +37,13 @@ export const EMPTY_STATS: Stats = {
   bestDayDistanceM: 0,
   earlyNotes: 0,
   nightNotes: 0,
+  workouts: 0,
+  workoutDistanceM: 0,
+  longestRunM: 0,
   today: { cells: 0, areaM2: 0, distanceM: 0, notes: 0 },
 };
 
-export type ChallengeGroup = 'explore' | 'distance' | 'notes' | 'media' | 'streak' | 'special';
+export type ChallengeGroup = 'explore' | 'distance' | 'notes' | 'media' | 'streak' | 'training' | 'special';
 
 export interface ChallengeDef {
   id: string;
@@ -88,6 +95,12 @@ export const CHALLENGES: ChallengeDef[] = [
   { id: 'streak_7', group: 'streak', icon: 'calendar', value: (s) => s.bestStreak, target: 7, unit: 'days', xp: 250 },
   { id: 'streak_14', group: 'streak', icon: 'calendar', value: (s) => s.bestStreak, target: 14, unit: 'days', xp: 600 },
   { id: 'streak_30', group: 'streak', icon: 'zap', value: (s) => s.bestStreak, target: 30, unit: 'days', xp: 1500 },
+  // --- Тренировки ---
+  { id: 'wk_1', group: 'training', icon: 'activity', value: (s) => s.workouts, target: 1, unit: 'count', xp: 60 },
+  { id: 'wk_10', group: 'training', icon: 'activity', value: (s) => s.workouts, target: 10, unit: 'count', xp: 300 },
+  { id: 'wk_run5', group: 'training', icon: 'zap', value: (s) => s.longestRunM, target: km(5), unit: 'km', xp: 250 },
+  { id: 'wk_run10', group: 'training', icon: 'flame', value: (s) => s.longestRunM, target: km(10), unit: 'km', xp: 500 },
+  { id: 'wk_total100', group: 'training', icon: 'medal', value: (s) => s.workoutDistanceM, target: km(100), unit: 'km', xp: 700 },
   // --- Особые ---
   { id: 'sp_categories', group: 'special', icon: 'layers', value: (s) => s.categories, target: 5, unit: 'count', xp: 150 },
   { id: 'sp_early', group: 'special', icon: 'sunrise', value: (s) => s.earlyNotes, target: 1, unit: 'count', xp: 120 },
@@ -95,7 +108,7 @@ export const CHALLENGES: ChallengeDef[] = [
   { id: 'sp_day10', group: 'special', icon: 'gauge', value: (s) => s.bestDayDistanceM, target: km(10), unit: 'km', xp: 300 },
 ];
 
-export const GROUP_ORDER: ChallengeGroup[] = ['explore', 'distance', 'notes', 'media', 'streak', 'special'];
+export const GROUP_ORDER: ChallengeGroup[] = ['explore', 'distance', 'notes', 'media', 'streak', 'training', 'special'];
 
 export interface ChallengeState {
   def: ChallengeDef;

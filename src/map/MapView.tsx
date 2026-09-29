@@ -49,10 +49,13 @@ function addOverlays(map: MlMap): void {
     map.addSource('measure-line', { type: 'geojson', data: EMPTY_FC });
     map.addSource('measure-pts', { type: 'geojson', data: EMPTY_FC });
     map.addSource('track', { type: 'geojson', data: EMPTY_FC });
+    map.addSource('workout', { type: 'geojson', data: EMPTY_FC });
   }
   if (!map.getLayer('track-casing')) {
     map.addLayer({ id: 'track-casing', type: 'line', source: 'track', layout: { 'line-cap': 'round', 'line-join': 'round', visibility: 'none' }, paint: { 'line-color': '#0b1220', 'line-width': 6, 'line-opacity': 0.5 } });
     map.addLayer({ id: 'track-line', type: 'line', source: 'track', layout: { 'line-cap': 'round', 'line-join': 'round', visibility: 'none' }, paint: { 'line-color': '#3DDC97', 'line-width': 3.2 } });
+    map.addLayer({ id: 'workout-casing', type: 'line', source: 'workout', layout: { 'line-cap': 'round', 'line-join': 'round' }, paint: { 'line-color': '#0b1220', 'line-width': 8, 'line-opacity': 0.55 } });
+    map.addLayer({ id: 'workout-line', type: 'line', source: 'workout', layout: { 'line-cap': 'round', 'line-join': 'round' }, paint: { 'line-color': '#FF5C93', 'line-width': 4.5 } });
     map.addLayer({ id: 'measure-casing', type: 'line', source: 'measure-line', layout: { 'line-cap': 'round', 'line-join': 'round' }, paint: { 'line-color': '#0b1220', 'line-width': 7, 'line-opacity': 0.55 } });
     map.addLayer({ id: 'measure-line', type: 'line', source: 'measure-line', layout: { 'line-cap': 'round', 'line-join': 'round' }, paint: { 'line-color': '#FFB547', 'line-width': 3.5, 'line-dasharray': [2, 1.4] } });
     map.addLayer({ id: 'measure-pts', type: 'circle', source: 'measure-pts', paint: { 'circle-radius': 6.5, 'circle-color': '#FFB547', 'circle-stroke-color': '#0b1220', 'circle-stroke-width': 2.5 } });
@@ -92,6 +95,10 @@ export function MapView() {
   const appReady = useApp((s) => s.ready);
   const zoneDraft = useApp((s) => s.zoneDraft);
   const fogOpacity = usePrefs((s) => s.fogOpacity);
+  const fogWind = usePrefs((s) => s.fogWind);
+  const screen = useApp((s) => s.screen);
+  const training = useApp((s) => s.workoutLive !== null);
+  const workoutRoute = useApp((s) => s.workoutRoute);
   const zones = usePrefs((s) => s.zones);
   const theme = resolveTheme(themePref);
 
@@ -126,6 +133,8 @@ export function MapView() {
       },
       getOpacity: () => usePrefs.getState().fogOpacity,
       getTheme: () => resolveTheme(usePrefs.getState().theme),
+      getWind: () => usePrefs.getState().fogWind,
+      isActive: () => useApp.getState().screen === 'map' && !useApp.getState().peek && useApp.getState().workoutLive === null,
     });
     fogRef.current = fog;
     const offReveal = engine.onReveal((cells) => fog.addPulse(cells));
@@ -218,6 +227,9 @@ export function MapView() {
     const d = measureData(st.measurePoints, usePrefs.getState().units, usePrefs.getState().lang);
     (map.getSource('measure-line') as GeoJSONSource).setData(d.line);
     (map.getSource('measure-pts') as GeoJSONSource).setData(d.pts);
+    if (map.getSource('workout')) {
+      (map.getSource('workout') as GeoJSONSource).setData({ type: 'FeatureCollection', features: useApp.getState().workoutRoute.length > 1 ? [{ type: 'Feature', geometry: { type: 'LineString', coordinates: useApp.getState().workoutRoute }, properties: {} }] : [] });
+    }
     const lines = engine.trackLines();
     (map.getSource('track') as GeoJSONSource).setData({
       type: 'FeatureCollection',
@@ -227,7 +239,7 @@ export function MapView() {
 
   useEffect(() => {
     syncOverlays();
-  }, [measurePoints, units, lang, ready, peek]);
+  }, [measurePoints, units, lang, ready, peek, workoutRoute]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -239,11 +251,15 @@ export function MapView() {
 
   // ---------------------------------------------------------------- туман
   useEffect(() => {
-    fogRef.current?.setPeek(peek);
-  }, [peek, ready]);
+    // в режиме тренировки туман не нужен — скрываем, как в режиме «без тумана»
+    fogRef.current?.setPeek(peek || training);
+  }, [peek, training, ready]);
   useEffect(() => {
     fogRef.current?.requestDraw();
   }, [fogOpacity, zones, zoneDraft, appReady, ready, theme]);
+  useEffect(() => {
+    fogRef.current?.refresh();
+  }, [fogWind, screen, peek, training]);
   useEffect(() => useApp.subscribe((s, p) => s.stats !== p.stats && fogRef.current?.requestDraw()), []);
 
   // ---------------------------------------------------------------- камера

@@ -1,19 +1,22 @@
 #!/usr/bin/env node
 /**
  * Идемпотентно настраивает нативные проекты Capacitor (android/, ios/) под TravelOpenMap:
- *  • Android: убирает разрешение INTERNET (приложение принципиально не ходит в сеть),
+ *  • Android: добавляет INTERNET (нужно только для необязательной, выключенной по умолчанию загрузки карт стран —
+ *    основное приложение не делает сетевых запросов, это гарантирует его CSP); флаг --offline-only
+ *    убирает INTERNET совсем — тогда ОС сама гарантирует отсутствие сети, а карты добавляются только импортом файлом;
  *    добавляет геолокацию, камеру и микрофон (запись видео);
  *  • iOS: добавляет тексты запросов разрешений (геолокация, камера, микрофон, фото, датчики).
  *
  * Запускается автоматически из `npm run cap:sync`, и его безопасно запускать повторно.
- *   node scripts/configure-native.mjs [--keep-internet]
+ *   node scripts/configure-native.mjs [--offline-only]
  */
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
-const keepInternet = process.argv.includes('--keep-internet');
+const offlineOnly = process.argv.includes('--offline-only');
+const keepInternet = !offlineOnly;
 
 // ---------------- Android ----------------
 const manifest = join(ROOT, 'android/app/src/main/AndroidManifest.xml');
@@ -22,8 +25,8 @@ if (existsSync(manifest)) {
   const block = [
     '    <!-- Permissions (TravelOpenMap) -->',
     keepInternet
-      ? '    <uses-permission android:name="android.permission.INTERNET" />'
-      : '    <!-- INTERNET намеренно отсутствует: приложение работает полностью офлайн.\n         Для live-reload при разработке запустите: node scripts/configure-native.mjs --keep-internet -->',
+      ? '    <!-- INTERNET нужен только для необязательной загрузки карт стран (по умолчанию выключена, CSP запрещает всё остальное). Строгая сборка: --offline-only -->\n    <uses-permission android:name="android.permission.INTERNET" />'
+      : '    <!-- INTERNET намеренно отсутствует (сборка --offline-only): приложение работает полностью офлайн, загрузка карт стран недоступна. -->',
     '    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />',
     '    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />',
     '    <uses-permission android:name="android.permission.CAMERA" />',
@@ -35,7 +38,7 @@ if (existsSync(manifest)) {
   ].join('\n');
   x = x.replace(/\s*<!-- Permissions[\s\S]*?(?=<\/manifest>)/, `\n\n${block}\n`);
   writeFileSync(manifest, x);
-  console.log(`android: разрешения обновлены (INTERNET ${keepInternet ? 'оставлен' : 'удалён'})`);
+  console.log(`android: разрешения обновлены (INTERNET ${keepInternet ? 'добавлен — для необязательной загрузки карт' : 'удалён — сборка offline-only'})`);
 }
 
 // ---------------- iOS ----------------

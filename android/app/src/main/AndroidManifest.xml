@@ -36,8 +36,8 @@
     </application>
 
     <!-- Permissions (TravelOpenMap) -->
-    <!-- INTERNET намеренно отсутствует: приложение работает полностью офлайн.
-         Для live-reload при разработке запустите: node scripts/configure-native.mjs --keep-internet -->
+    <!-- INTERNET нужен только для необязательной загрузки карт стран (по умолчанию выключена, CSP запрещает всё остальное). Строгая сборка: --offline-only -->
+    <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
     <uses-permission android:name="android.permission.CAMERA" />

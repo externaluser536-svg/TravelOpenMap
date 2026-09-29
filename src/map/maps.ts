@@ -13,6 +13,7 @@ export interface CatalogEntry {
   bounds?: [number, number, number, number];
   minzoom?: number;
   maxzoom?: number;
+  country?: string;
 }
 
 interface Manifest {
@@ -48,6 +49,7 @@ export async function loadCatalog(): Promise<CatalogEntry[]> {
     bounds: r.bounds,
     minzoom: r.minzoom,
     maxzoom: r.maxzoom,
+    country: r.country,
   }));
   return [...bundled, ...imported];
 }
@@ -62,12 +64,13 @@ export async function openMap(id: string): Promise<MapInfo | null> {
 }
 
 /** Импорт файла .pmtiles. Бросает Error с понятным текстом, если файл не подходит. */
-export async function importMapFile(file: File): Promise<OfflineMapRecord> {
+export async function importMapFile(file: File, extra: { name?: string; country?: string } = {}): Promise<OfflineMapRecord> {
   const info = await inspectPmtiles(file);
   if (!info.vector) throw new Error('not-vector');
   const rec: OfflineMapRecord = {
     id: `imported:${uid()}`,
-    name: file.name.replace(/\.pmtiles$/i, ''),
+    name: extra.name ?? file.name.replace(/\.pmtiles$/i, ''),
+    country: extra.country,
     blob: file,
     size: file.size,
     bounds: info.bounds,

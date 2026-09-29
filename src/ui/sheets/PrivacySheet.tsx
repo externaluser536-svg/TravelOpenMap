@@ -3,6 +3,8 @@ import { useApp } from '../../state/store';
 import { useT } from '../../i18n';
 import { Icon } from '../icons';
 import { Row, Sheet } from '../common';
+import { usePrefs } from '../../state/prefs';
+import { gatewayLog } from '../../map/gateway-client';
 
 /** Считает сетевые запросы, ушедшие за пределы приложения (по Resource Timing). */
 export function externalRequests(): string[] {
@@ -33,6 +35,7 @@ export function PrivacySheet() {
     return () => clearInterval(id);
   }, []);
   const ok = ext.length === 0;
+  const allow = usePrefs((s) => s.allowDownloads);
   return (
     <Sheet title={t('privacy.title')} onClose={() => patch({ sheet: null })}>
       <div className="form">
@@ -54,6 +57,11 @@ export function PrivacySheet() {
           </div>
         )}
         <div className="card list">
+          <Row
+            icon={allow ? 'globe' : 'shield-check'}
+            title={allow ? t('privacy.gateway_on') : t('privacy.gateway_off')}
+            sub={allow ? `${t('privacy.gateway_on_sub')} ${gatewayLog.calls ? `· ${t('privacy.gateway_calls', { n: gatewayLog.calls, hosts: [...gatewayLog.hosts].join(', ') || '—' })}` : ''}` : t('privacy.gateway_off_sub')}
+          />
           <Row icon="wifi-off" title={t('privacy.offline')} sub={t('privacy.offline_sub')} />
           <Row icon="database" title={t('privacy.local')} sub={t('privacy.local_sub')} />
           <Row icon="shield-check" title={t('privacy.csp')} sub={t('privacy.csp_sub')} />

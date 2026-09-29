@@ -25,8 +25,8 @@ Browser geolocation works on `localhost` (use DevTools → Sensors to fake it). 
 ## 3. Tests
 
 ```bash
-npm run typecheck && npm test        # 40 unit tests
-npm run test:e2e                     # production build, DNS for external hosts disabled, zero-request check
+npm run typecheck && npm test        # 67 unit tests
+npm run test:e2e                     # production build, DNS for external hosts disabled, zero-request check + the download gateway is inactive by default
 ```
 
 ## 4. Android
@@ -39,7 +39,7 @@ npm run android:apk     # debug APK: android/app/build/outputs/apk/debug/app-deb
 
 Release: create a keystore (`keytool -genkey -v -keystore travelopenmap.jks -keyalg RSA -keysize 2048 -validity 10000 -alias tom`), then *Build → Generate Signed Bundle / APK*. Keep keys out of the repo. App id: `app.travelopenmap` (`capacitor.config.ts`).
 
-`INTERNET` is intentionally **removed** from the manifest. For live reload use `node scripts/configure-native.mjs --keep-internet`, and re-run `npm run cap:sync` before releasing.
+`INTERNET` is **added by default** (`npm run cap:sync` does it) — it is needed only for the optional, off-by-default country-map download. Everything else in the app still cannot open external connections (CSP). For a strict build where the OS itself forbids network access run `node scripts/configure-native.mjs --offline-only` (country download becomes unavailable; add maps by file). `npm run cap:sync` restores the default.
 
 ## 5. iOS (macOS only)
 
@@ -52,7 +52,7 @@ Permission strings (location, camera, microphone, photos, motion) are added to `
 
 ## 6. Offline maps
 
-The Monaco demo (`public/maps/monaco.pmtiles`) is bundled. Add your own via *Profile → Offline maps → Import .pmtiles*, or drop the file into `public/maps/` and register it in `public/maps/manifest.json`. To produce a file:
+The Monaco demo (`public/maps/monaco.pmtiles`) is bundled. **Optional download:** *Profile → Offline maps → Add country* → pick a country and detail level (size estimate shown) → enable *“Allow map downloads from the network”* → enter a PMTiles source URL (e.g. a Protomaps build `https://build.protomaps.com/YYYYMMDD.pmtiles`) → *Check source* → *Download*. The source must be PMTiles v3 (vector), support HTTP Range and CORS (`Access-Control-Allow-Origin`, `Access-Control-Expose-Headers: Content-Range`); only the needed tiles are fetched (limit 300 MB). Or add your own via *Profile → Offline maps → Import .pmtiles*, or drop the file into `public/maps/` and register it in `public/maps/manifest.json`. To produce a file:
 
 ```bash
 pmtiles extract https://build.protomaps.com/YYYYMMDD.pmtiles paris.pmtiles --bbox=2.22,48.81,2.47,48.91 --maxzoom=15
@@ -71,7 +71,10 @@ See [docs/OFFLINE_MAPS.md](docs/OFFLINE_MAPS.md). Map fonts/sprites: `npm run as
 | Symptom | Fix |
 |---|---|
 | Blank map | The file is missing or doesn't cover your location: check `manifest.json`, *Offline maps*, the “No offline map here” banner. |
-| Blank screen on Android without INTERNET | Untested on device. Restore it with `--keep-internet` (CSP still blocks external connections) and open an issue. |
+| Blank screen on Android in the `--offline-only` build | Untested on device. Go back to the default build with `npm run cap:sync` (adds INTERNET; CSP still blocks external connections) and open an issue. |
+| “Download map” disabled | Enable *Allow map downloads* and enter a source URL. Without it the app deliberately sends nothing. |
+| Country download fails (network/CORS/“not a vector map”) | The source must be PMTiles v3 vector tiles with HTTP Range + CORS; use *Check source*. Otherwise download the file manually and import it. |
+| Workout not recording the route | Like fog, workouts are recorded only while the app is on screen; check location permission and *Settings → GPS accuracy*. |
 | Fog not clearing | Location permission; *Settings → GPS accuracy*; you may be inside an excluded zone. |
 | Compass silent | iOS needs a tap on “Allow” in the Compass sheet; emulators have no sensor. |
 | Tiles fail from the bundled file on iOS | `capacitor://` scheme + HTTP Range; import the map via the app instead (read as a `File`, no HTTP). |

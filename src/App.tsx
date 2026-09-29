@@ -10,7 +10,12 @@ import { openMap, loadCatalog } from './map/maps';
 import { Hud } from './ui/Hud';
 import { TabBar } from './ui/TabBar';
 import { NotesPage } from './ui/pages/NotesPage';
-import { QuestsPage } from './ui/pages/QuestsPage';
+import { WorkoutPage } from './ui/pages/WorkoutPage';
+import { WorkoutSheet } from './ui/sheets/WorkoutSheet';
+import { CountriesSheet, CountrySheet } from './ui/sheets/CountrySheet';
+import { TripSheet } from './ui/sheets/TripSheet';
+import { TripEditorSheet } from './ui/sheets/TripEditorSheet';
+import { WorkoutMini } from './ui/WorkoutMini';
 import { ProfilePage } from './ui/pages/ProfilePage';
 import { EditorSheet } from './ui/sheets/EditorSheet';
 import { NoteSheet } from './ui/sheets/NoteSheet';
@@ -91,7 +96,7 @@ export default function App() {
       {screen !== 'map' && (
         <div className="page-layer" key={screen}>
           {screen === 'notes' && <NotesPage />}
-          {screen === 'quests' && <QuestsPage />}
+          {screen === 'workout' && <WorkoutPage />}
           {screen === 'profile' && <ProfilePage />}
         </div>
       )}
@@ -104,6 +109,12 @@ export default function App() {
       {sheet?.type === 'zones' && <ZonesSheet />}
       {sheet?.type === 'data' && <DataSheet />}
       {sheet?.type === 'privacy' && <PrivacySheet />}
+      {sheet?.type === 'countries' && <CountriesSheet />}
+      {sheet?.type === 'country' && <CountrySheet code={sheet.code} />}
+      {sheet?.type === 'workout' && <WorkoutSheet id={sheet.id} />}
+      {sheet?.type === 'trip' && <TripSheet id={sheet.id} />}
+      {sheet?.type === 'tripEditor' && <TripEditorSheet />}
+      {screen !== 'map' && screen !== 'workout' && <WorkoutMini />}
       <Toasts />
       <LevelUp />
       {!onboarded && <Onboarding />}

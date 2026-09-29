@@ -3,7 +3,7 @@
 
 import { FogGrid, cellArea, inAnyZone, keyY, type ExclusionZone } from '../core/fog';
 import { haversine, type LngLat } from '../core/geo';
-import { computeStreaks, dateKey, emptyDay, lastDays, type DayLog } from '../core/days';
+import { computeStreaks, dateKey, emptyDay, isActiveDay, lastDays, type DayLog } from '../core/days';
 import {
   CHALLENGES,
   EMPTY_STATS,
@@ -15,6 +15,7 @@ import {
   type Stats,
 } from '../core/challenges';
 import { baseXp, levelFromXp } from '../core/levels';
+import { hourHistogram } from '../core/stats';
 import type { TrackPoint } from '../core/gpx';
 import {
   deleteMedia,
@@ -35,6 +36,8 @@ import {
   type TrackRecord,
 } from '../data/db';
 import { usePrefs } from './prefs';
+import { workoutEngine } from './workoutEngine';
+import { loadTrips } from './trips';
 import { useApp, type Fix, type NoteDraft } from './store';
 import { success, tap } from '../services/haptics';
 import { t } from '../i18n';
@@ -79,6 +82,8 @@ class Engine {
     this.notes = notes;
     for (const tr of tracks) this.tracks.set(tr.id, tr);
     this.recount();
+    workoutEngine.onChange = () => this.publish();
+    await Promise.all([workoutEngine.load(), loadTrips()]);
     // задним числом отмечаем уже выполненные челленджи без фанфар
     this.settleCompleted(false);
     this.prevLevel = levelFromXp(this.totalXp(this.computeStats())).level;
@@ -109,6 +114,12 @@ class Engine {
     const first = !app.position;
     app.patch({ position: f, gps: weak ? 'weak' : 'ok', inZone });
     if (first && app.follow) app.patch({ flyTo: { lng: f.lng, lat: f.lat, zoom: 16, nonce: Date.now() } });
+
+    // Режим тренировки: фикс идёт только в трекер тренировки — туман не открывается, исследование не считается.
+    if (workoutEngine.active) {
+      workoutEngine.onFix(f);
+      return;
+    }
 
     if (weak) return;
     if (inZone) {
@@ -294,41 +305,57 @@ class Engine {
     return zones.length ? this.notes.filter((n) => !inAnyZone(n, zones)) : this.notes;
   }
 
+  /** Дни с числом заметок и расстоянием тренировок (для серий и графиков). */
+  private mergedDays(): DayLog[] {
+    const notesByDay = new Map<string, number>();
+    for (const n of this.notesInScope()) {
+      const k = dateKey(n.createdAt);
+      notesByDay.set(k, (notesByDay.get(k) ?? 0) + 1);
+    }
+    const workoutByDay = new Map<string, number>();
+    for (const w of workoutEngine.workouts) {
+      const k = dateKey(w.startedAt);
+      workoutByDay.set(k, (workoutByDay.get(k) ?? 0) + w.distanceM);
+    }
+    const merged = new Map<string, DayLog>();
+    for (const d of this.days.values()) merged.set(d.date, { ...d, notes: notesByDay.get(d.date) ?? 0, workoutM: workoutByDay.get(d.date) ?? 0 });
+    for (const [date, n] of notesByDay) if (!merged.has(date)) merged.set(date, { ...emptyDay(date), notes: n, workoutM: workoutByDay.get(date) ?? 0 });
+    for (const [date, m] of workoutByDay) if (!merged.has(date)) merged.set(date, { ...emptyDay(date), workoutM: m });
+    return [...merged.values()].sort((a, b) => a.date.localeCompare(b.date));
+  }
+
   computeStats(): Stats {
     const today = dateKey();
     const scoped = this.notesInScope();
-    const days = [...this.days.values()];
-    const notesByDay = new Map<string, number>();
     let early = 0;
     let night = 0;
     for (const n of scoped) {
-      const k = dateKey(n.createdAt);
-      notesByDay.set(k, (notesByDay.get(k) ?? 0) + 1);
       const h = new Date(n.createdAt).getHours();
       if (h >= 4 && h < 7) early++;
       if (h >= 22 || h < 4) night++;
     }
-    const merged = new Map<string, DayLog>();
-    for (const d of days) merged.set(d.date, { ...d, notes: notesByDay.get(d.date) ?? 0 });
-    for (const [date, n] of notesByDay) if (!merged.has(date)) merged.set(date, { ...emptyDay(date), notes: n });
-    const all = [...merged.values()];
+    const all = this.mergedDays();
     const { current, best } = computeStreaks(all, today);
-    const td = merged.get(today) ?? emptyDay(today);
+    const td = all.find((d) => d.date === today) ?? emptyDay(today);
+    const ws = workoutEngine.workouts;
     return {
       ...EMPTY_STATS,
       cells: this.counted.cells,
       areaM2: this.counted.areaM2,
-      distanceM: days.reduce((s, d) => s + d.distanceM, 0),
+      distanceM: this.days.size ? [...this.days.values()].reduce((s, d) => s + d.distanceM, 0) : 0,
       notes: scoped.length,
       photos: scoped.reduce((s, n) => s + n.photos, 0),
       videos: scoped.reduce((s, n) => s + n.videos, 0),
       categories: new Set(scoped.map((n) => n.category)).size,
-      activeDays: all.filter((d) => d.distanceM >= 100 || d.cells > 0 || d.notes > 0).length,
+      activeDays: all.filter((d) => isActiveDay(d)).length,
       streak: current,
       bestStreak: best,
       bestDayDistanceM: all.reduce((m, d) => Math.max(m, d.distanceM), 0),
       earlyNotes: early,
       nightNotes: night,
+      workouts: ws.length,
+      workoutDistanceM: ws.reduce((s, w) => s + w.distanceM, 0),
+      longestRunM: ws.filter((w) => w.type === 'run').reduce((m, w) => Math.max(m, w.distanceM), 0),
       today: { cells: td.cells, areaM2: td.areaM2, distanceM: td.distanceM, notes: td.notes },
     };
   }
@@ -388,9 +415,7 @@ class Engine {
     const level = levelFromXp(this.totalXp(stats));
     const prefs = usePrefs.getState();
     const today = dateKey();
-    const notesByDay = new Map<string, number>();
-    for (const n of this.notesInScope()) notesByDay.set(dateKey(n.createdAt), (notesByDay.get(dateKey(n.createdAt)) ?? 0) + 1);
-    const merged = [...this.days.values()].map((d) => ({ ...d, notes: notesByDay.get(d.date) ?? 0 }));
+    const merged = this.mergedDays();
     const app = useApp.getState();
     const levelUp = !this.quiet && useApp.getState().ready && level.level > this.prevLevel ? level : null;
     this.prevLevel = Math.max(this.prevLevel, level.level);
@@ -400,6 +425,8 @@ class Engine {
       level,
       challenges: evaluateChallenges(stats, prefs.completed),
       quests: dailyQuests(today, stats.today, prefs.completed),
+      allDays: merged,
+      hours: hourHistogram(this.allTracks()),
       lastDays: lastDays(merged, today, 14).map((d) => ({ date: d.date, distanceM: d.distanceM, areaM2: d.areaM2, notes: d.notes })),
       ...(levelUp ? { levelUp } : {}),
     });
@@ -436,6 +463,8 @@ class Engine {
   async resetAll(): Promise<void> {
     await wipeAll();
     await clearFogStore();
+    workoutEngine.discard();
+    await workoutEngine.reload();
     this.grid.clear();
     this.days.clear();
     this.tracks.clear();
@@ -458,6 +487,7 @@ class Engine {
     for (const d of days) this.days.set(d.date, d);
     for (const tr of tracks) this.tracks.set(tr.id, tr);
     this.notes = notes;
+    await Promise.all([workoutEngine.reload(), loadTrips()]);
     this.recount();
     this.settleCompleted(false);
     this.prevLevel = levelFromXp(this.totalXp(this.computeStats())).level;

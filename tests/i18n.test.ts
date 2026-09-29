@@ -5,6 +5,7 @@ import { ru } from '../src/i18n/ru';
 import { en } from '../src/i18n/en';
 import { CHALLENGES, GROUP_ORDER } from '../src/core/challenges';
 import { CATEGORIES } from '../src/core/categories';
+import { CHECKLIST_TEMPLATE } from '../src/core/trips';
 
 function walk(dir: string, out: string[] = []): string[] {
   for (const f of readdirSync(dir)) {
@@ -38,6 +39,15 @@ describe('i18n', () => {
       ...GROUP_ORDER.map((g) => `group.${g}`),
       ...['wanderer', 'tourist', 'traveler', 'tracker', 'explorer', 'pathfinder', 'cartographer', 'navigator', 'legend', 'guardian'].map((k) => `title.${k}`),
       ...['distance', 'area', 'notes'].map((k) => `daily.${k}`),
+      ...['Europe', 'Asia', 'Africa', 'Americas', 'Oceania', 'Antarctic', 'Other'].map((k) => `region.${k}`),
+      ...['overview', 'city', 'street', 'max'].map((k) => `countries.d.${k}`),
+      ...['too-large', 'aborted', 'not-vector', 'bad-url', 'network', 'timeout'].map((k) => `countries.err.${k}`),
+      ...['idea', 'planned', 'booked', 'done', 'cancelled'].map((k) => `trips.status.${k}`),
+      ...['plane', 'train', 'car', 'bus', 'ship', 'bike', 'other'].map((k) => `trips.tr.${k}`),
+      ...['transport', 'stay', 'food', 'fun', 'shopping', 'other'].map((k) => `exp.${k}`),
+      ...['docs', 'clothes', 'tech', 'health', 'misc'].map((k) => `checkg.${k}`),
+      ...CHECKLIST_TEMPLATE.flatMap((g) => g.keys.map((k) => `check.${k}`)),
+      ...['walk', 'run'].map((k) => `workout.type.${k}`),
     ];
     expect(need.filter((k) => !(k in ru))).toEqual([]);
   });

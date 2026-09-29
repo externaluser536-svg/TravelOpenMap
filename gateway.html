@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <!--
+      Сетевой шлюз загрузки карт. ЭТО ЕДИНСТВЕННОЕ место в приложении, которому разрешён выход в сеть,
+      и оно работает только по явной команде пользователя (Профиль → Офлайн-карты → Скачать).
+      Основное приложение (index.html) по-прежнему запрещает любые внешние соединения.
+      Шлюз не имеет доступа к данным приложения: получает URL и рамку, возвращает готовый файл карты.
+    -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'none'; script-src 'self'; connect-src http: https:; base-uri 'none'; form-action 'none'"
+    />
+    <title>TravelOpenMap map gateway</title>
+  </head>
+  <body>
+    <script type="module" src="/src/gateway/main.ts"></script>
+  </body>
+</html>

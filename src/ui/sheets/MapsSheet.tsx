@@ -4,7 +4,8 @@ import { usePrefs } from '../../state/prefs';
 import { useT } from '../../i18n';
 import { Icon } from '../icons';
 import { Sheet } from '../common';
-import { importMapFile, loadCatalog, openMap, removeMap, type CatalogEntry } from '../../map/maps';
+import { importMapFile, loadCatalog, removeMap, type CatalogEntry } from '../../map/maps';
+import { activateMap } from '../../state/actions';
 import { pickFile } from '../../services/files';
 
 export function MapsSheet() {
@@ -17,12 +18,7 @@ export function MapsSheet() {
   const refresh = () => void loadCatalog().then(setItems);
   useEffect(refresh, []);
 
-  const activate = async (id: string) => {
-    const info = await openMap(id);
-    if (!info) return;
-    usePrefs.getState().set({ activeMapId: id });
-    patch({ mapInfo: info, fitBounds: { bounds: info.bounds, nonce: Date.now() } });
-  };
+  const activate = activateMap;
 
   const doImport = async () => {
     const f = await pickFile('.pmtiles,application/octet-stream');
@@ -79,7 +75,10 @@ export function MapsSheet() {
             </div>
           ))}
         </div>
-        <button className="btn primary block" disabled={busy} onClick={() => void doImport()}>
+        <button className="btn primary block" onClick={() => patch({ sheet: { type: 'countries' } })}>
+          <Icon name="globe" size={18} /> {t('countries.choose')}
+        </button>
+        <button className="btn ghost block" disabled={busy} onClick={() => void doImport()}>
           <Icon name="upload" size={18} /> {busy ? t('common.loading') : t('maps.import')}
         </button>
         <div className="card how">

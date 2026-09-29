@@ -7,6 +7,12 @@ export default defineConfig({
   plugins: [react()],
   server: { host: true, port: 5173 },
   worker: { format: 'es' },
-  build: { target: 'es2022', chunkSizeWarningLimit: 1500, sourcemap: false },
+  build: {
+    target: 'es2022',
+    chunkSizeWarningLimit: 1500,
+    sourcemap: false,
+    // вторая страница — сетевой шлюз загрузки карт (изолирован собственной CSP)
+    rollupOptions: { input: { main: 'index.html', gateway: 'gateway.html' } },
+  },
   test: { environment: 'node', include: ['tests/**/*.test.ts'] },
 });

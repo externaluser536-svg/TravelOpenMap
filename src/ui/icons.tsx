@@ -1,10 +1,11 @@
 import {
+  Table2, Plane, CalendarDays, Wallet, Timer, Pause, Flag, Bike, Luggage, Copy, TrendingUp, TrendingDown, Minus, Ship, Bus, Car, TrainFront, Users, Heart, CircleCheck, Backpack, Coins, PersonStanding, FileText, RefreshCw, Link, CheckCheck, Hourglass, Circle,
   Activity, Award, Bed, Binoculars, Bookmark, Calendar, Camera, ChartColumn, Check, ChevronLeft, ChevronRight, Clapperboard, Clock,
   Cloud, Compass, Crosshair, Crown, Database, Download, Eye, EyeOff, Flame, Footprints, Gauge, Globe, HardDrive, Images, Info,
   Landmark, Languages, Layers, Library, Lightbulb, LocateFixed, LocateOff, Map, MapPin, MapPinned, Medal, Moon, Mountain,
   Navigation, Notebook, Palette, Pencil, Play, Plus, Rocket, Route, Ruler, Search, Settings, Share2, Shield, ShieldCheck, Sparkles,
   Square, Sun, Sunrise, Target, Telescope, Trash2, Trees, Trophy, Train, TriangleAlert, Undo2, Upload, User, Utensils, Video, Wifi,
-  WifiOff, X, Zap, Ban, Image, Film, ListChecks, Vibrate, PartyPopper, Star, Tag, Smartphone,
+  WifiOff, Wind, X, Zap, Ban, Image, Film, ListChecks, Vibrate, PartyPopper, Star, Tag, Smartphone,
 } from 'lucide-react';
 import type { ComponentType, SVGProps } from 'react';
 
@@ -22,7 +23,8 @@ const ICONS: Record<string, IconC> = {
   'shield-check': ShieldCheck, sparkles: Sparkles, square: Square, sun: Sun, sunrise: Sunrise, target: Target,
   telescope: Telescope, trash: Trash2, trees: Trees, trophy: Trophy, train: Train, 'triangle-alert': TriangleAlert, undo: Undo2,
   upload: Upload, user: User, utensils: Utensils, video: Video, wifi: Wifi, 'wifi-off': WifiOff, x: X, zap: Zap, ban: Ban,
-  image: Image, film: Film, list: ListChecks, vibrate: Vibrate, party: PartyPopper, star: Star, tag: Tag, phone: Smartphone,
+  'table': Table2, 'plane': Plane, 'calendar-days': CalendarDays, 'wallet': Wallet, 'timer': Timer, 'pause': Pause, 'flag': Flag, 'bike': Bike, 'luggage': Luggage, 'copy': Copy, 'trend-up': TrendingUp, 'trend-down': TrendingDown, 'minus': Minus, 'ship': Ship, 'bus': Bus, 'car': Car, 'train-front': TrainFront, 'users': Users, 'heart': Heart, 'circle-check': CircleCheck, 'backpack': Backpack, 'coins': Coins, 'person': PersonStanding, 'file': FileText, 'refresh': RefreshCw, 'link': Link, 'check-all': CheckCheck, 'hourglass': Hourglass, 'circle': Circle,
+  wind: Wind, image: Image, film: Film, list: ListChecks, vibrate: Vibrate, party: PartyPopper, star: Star, tag: Tag, phone: Smartphone,
 };
 
 export function Icon({ name, size = 20, strokeWidth = 2, ...rest }: { name: string; size?: number; strokeWidth?: number } & Omit<SVGProps<SVGSVGElement>, 'name'>) {

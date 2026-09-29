@@ -64,6 +64,21 @@ export function SettingsSheet() {
         </div>
         <div className="set-col">
           <span>
+            <Icon name="wind" size={18} /> {t('settings.wind')}
+          </span>
+          <Segmented
+            value={p.fogWind}
+            onChange={(v) => p.set({ fogWind: v })}
+            options={[
+              { value: 0, label: t('settings.wind_off') },
+              { value: 1, label: t('settings.wind_calm') },
+              { value: 2, label: t('settings.wind_strong') },
+            ]}
+          />
+          <small className="muted">{t('settings.wind_hint')}</small>
+        </div>
+        <div className="set-col">
+          <span>
             <Icon name="locate" size={18} /> {t('settings.accuracy')}
           </span>
           <Segmented value={p.minAccuracy} onChange={(v) => p.set({ minAccuracy: v })} options={[30, 60, 100, 200].map((v) => ({ value: v, label: `≤ ${formatDistance(v, p.units, lang)}` }))} />

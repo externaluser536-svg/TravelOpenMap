@@ -19,11 +19,16 @@ export interface FogOptions {
   getDraftZone: () => ExclusionZone | null;
   getOpacity: () => number;
   getTheme: () => 'light' | 'dark';
+  /** Сила ветра: 0 — туман неподвижен, 1 — лёгкий, 2 — сильный. */
+  getWind: () => number;
+  /** false — туман не виден (другой экран, режим «без тумана»): анимацию можно ставить на паузу. */
+  isActive: () => boolean;
 }
 
 const MASK_SCALE = 0.5;
 const PULSE_MS = 1100;
 const FOG_RGB = { dark: '3,6,14', light: '14,22,42' };
+const REDUCED_MOTION = typeof matchMedia !== 'undefined' && matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 /** Сглаженный порог по альфе маски: чёткая, но не «лесенкой» граница тумана. */
 function makeLut(a: number, b: number): Uint8ClampedArray {
@@ -52,29 +57,59 @@ function makeBrush(): HTMLCanvasElement {
   return c;
 }
 
-/** Бесшовная «облачная» текстура тумана. */
-function makeCloud(): HTMLCanvasElement {
+/**
+ * Бесшовная текстура облаков: fBm из периодического value-noise.
+ * cells — число ячеек решётки базовой октавы, octaves — число октав, gain — затухание октав.
+ */
+function makeCloud(seed: number, cells: number, octaves: number, gain: number, maxAlpha: number, contrast: number): HTMLCanvasElement {
   const S = 256;
   const c = document.createElement('canvas');
   c.width = c.height = S;
-  const g = c.getContext('2d')!;
-  let seed = 1337;
-  const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
-  for (let i = 0; i < 46; i++) {
-    const x = rnd() * S;
-    const y = rnd() * S;
-    const r = 24 + rnd() * 60;
-    const a = 0.07 + rnd() * 0.1;
-    for (const dx of [-S, 0, S]) {
-      for (const dy of [-S, 0, S]) {
-        const grad = g.createRadialGradient(x + dx, y + dy, 0, x + dx, y + dy, r);
-        grad.addColorStop(0, `rgba(160,180,220,${a})`);
-        grad.addColorStop(1, 'rgba(160,180,220,0)');
-        g.fillStyle = grad;
-        g.fillRect(x + dx - r, y + dy - r, r * 2, r * 2);
+  const g = c.getContext('2d', { willReadFrequently: true })!;
+  let st = seed;
+  const rnd = () => ((st = (st * 16807) % 2147483647) / 2147483647);
+  const lattices: { n: number; v: Float32Array }[] = [];
+  for (let o = 0; o < octaves; o++) {
+    const n = cells * 2 ** o;
+    const v = new Float32Array(n * n);
+    for (let i = 0; i < v.length; i++) v[i] = rnd();
+    lattices.push({ n, v });
+  }
+  const smooth = (t: number) => t * t * t * (t * (t * 6 - 15) + 10); // квинтическая: без «ромбов» на стыках
+  const img = g.createImageData(S, S);
+  for (let y = 0; y < S; y++) {
+    for (let x = 0; x < S; x++) {
+      let val = 0;
+      let amp = 1;
+      let norm = 0;
+      for (const { n, v } of lattices) {
+        const fx = (x / S) * n;
+        const fy = (y / S) * n;
+        const x0 = Math.floor(fx);
+        const y0 = Math.floor(fy);
+        const tx = smooth(fx - x0);
+        const ty = smooth(fy - y0);
+        const x1 = (x0 + 1) % n;
+        const y1 = (y0 + 1) % n;
+        const xa = x0 % n;
+        const ya = y0 % n;
+        const a = v[ya * n + xa] * (1 - tx) + v[ya * n + x1] * tx;
+        const b = v[y1 * n + xa] * (1 - tx) + v[y1 * n + x1] * tx;
+        val += (a * (1 - ty) + b * ty) * amp;
+        norm += amp;
+        amp *= gain;
       }
+      val /= norm;
+      // контраст вокруг середины → отдельные «клубы» и просветы
+      const t = Math.min(1, Math.max(0, (val - 0.5) * contrast + 0.5));
+      const i = (y * S + x) * 4;
+      img.data[i] = 165;
+      img.data[i + 1] = 185;
+      img.data[i + 2] = 225;
+      img.data[i + 3] = Math.round(255 * maxAlpha * t ** 1.35);
     }
   }
+  g.putImageData(img, 0, 0);
   return c;
 }
 
@@ -107,12 +142,21 @@ export class FogRenderer {
   private hctx = this.half.getContext('2d', { willReadFrequently: true })!;
   private mctx = this.mask.getContext('2d', { willReadFrequently: true })!;
   private brush = makeBrush();
-  private cloud = makeCloud();
+  private cloudBig = makeCloud(1337, 3, 5, 0.52, 0.6, 1.9);
+  private cloudFine = makeCloud(7331, 5, 5, 0.55, 0.5, 2.1);
   private hatch = makeHatch();
   private pulses = new Map<number, number>();
   private raf = 0;
   private destroyed = false;
+  private maskDirty = true;
+  private lastFrame = 0;
+  private clock = 0; // накопленное «время ветра», с
+  private offA = { x: 0, y: 0 };
+  private offB = { x: 0, y: 0 };
+  private view: { w: number; h: number; wx0: number; wy0: number; worldSize: number; zones: { x: number; y: number; r: number }[] } | null = null;
+  private peek = false;
   private onRender = () => this.requestDraw();
+  private onVisibility = () => this.requestDraw();
 
   constructor(
     private map: MlMap,
@@ -129,6 +173,7 @@ export class FogRenderer {
     host.appendChild(this.zone);
     map.on('render', this.onRender);
     map.on('resize', this.onRender);
+    document.addEventListener('visibilitychange', this.onVisibility);
     this.requestDraw();
   }
 
@@ -137,12 +182,20 @@ export class FogRenderer {
     cancelAnimationFrame(this.raf);
     this.map.off('render', this.onRender);
     this.map.off('resize', this.onRender);
+    document.removeEventListener('visibilitychange', this.onVisibility);
     this.fog.remove();
     this.zone.remove();
   }
 
   setPeek(peek: boolean): void {
+    this.peek = peek;
     this.fog.style.opacity = peek ? '0' : '1';
+    this.requestDraw();
+  }
+
+  /** Настройки/тема/экран изменились — пересобрать кадр. */
+  refresh(): void {
+    this.requestDraw();
   }
 
   addPulse(cells: number[]): void {
@@ -151,12 +204,54 @@ export class FogRenderer {
     this.requestDraw();
   }
 
+  /** Карта или данные изменились: маску нужно пересчитать. */
   requestDraw(): void {
+    this.maskDirty = true;
+    this.schedule();
+  }
+
+  private schedule(): void {
     if (this.raf || this.destroyed) return;
-    this.raf = requestAnimationFrame(() => {
+    this.raf = requestAnimationFrame((ts) => {
       this.raf = 0;
-      this.draw();
+      this.frame(ts);
     });
+  }
+
+  private animating(): boolean {
+    return this.opts.getWind() > 0 && !this.peek && !document.hidden && this.opts.isActive() && !REDUCED_MOTION;
+  }
+
+  private frame(ts: number): void {
+    if (this.destroyed) return;
+    const anim = this.animating();
+    const dtMs = ts - this.lastFrame;
+    // анимацию ограничиваем 30 к/с; пересчёт маски (движение карты) — без ограничения
+    if (anim && !this.maskDirty && !this.pulses.size && dtMs < 32) {
+      this.schedule();
+      return;
+    }
+    this.lastFrame = ts;
+    if (anim) this.advanceWind(Math.min(dtMs, 100) / 1000);
+    if (this.maskDirty || this.pulses.size) this.rebuild();
+    this.composite();
+    if (anim || this.pulses.size) this.schedule();
+  }
+
+  /** Ветер: направление «плавает», скорость меняется порывами. Два слоя дрейфуют в разные стороны. */
+  private advanceWind(dt: number): void {
+    const k = this.opts.getWind();
+    this.clock += dt;
+    const t = this.clock;
+    const base = 28 + 22 * Math.sin(t / 37) + 9 * Math.sin(t / 11.3); // град.
+    const gust = 1 + 0.55 * Math.sin(t / 8.7) * Math.sin(t / 3.1 + 1) + 0.25 * Math.sin(t / 2.3);
+    const speed = 17 * k * Math.max(0.25, gust); // px/с
+    const a = (base * Math.PI) / 180;
+    const b = ((base + 38 + 14 * Math.sin(t / 19)) * Math.PI) / 180;
+    this.offA.x += Math.cos(a) * speed * dt;
+    this.offA.y += Math.sin(a) * speed * dt;
+    this.offB.x += Math.cos(b) * speed * 1.9 * dt;
+    this.offB.y += Math.sin(b) * speed * 1.9 * dt;
   }
 
   private resize(w: number, h: number): number {
@@ -189,11 +284,14 @@ export class FogRenderer {
   /** Только для замеров производительности (dev/demo). */
   drawNow(): number {
     const t0 = performance.now();
-    this.draw();
+    this.maskDirty = true;
+    this.rebuild();
+    this.composite();
     return performance.now() - t0;
   }
 
-  private draw(): void {
+  /** Дорогая часть: проекция ячеек → маска; зоны. Выполняется только при изменении карты/данных. */
+  private rebuild(): void {
     if (this.destroyed) return;
     const map = this.map;
     const el = map.getContainer();
@@ -220,13 +318,13 @@ export class FogRenderer {
     const sx = (xw: number, yw: number) => pA.x + a00 * (xw - wx0) + a01 * (yw - wy0);
     const sy = (xw: number, yw: number) => pA.y + a10 * (xw - wx0) + a11 * (yw - wy0);
 
-    this.drawFog({ w, h, cellPx, wx0, wy0, worldSize, sx, sy, map });
+    this.buildMask({ w, h, cellPx, wx0, wy0, worldSize, sx, sy, map });
     this.drawZones({ w, h, dpr, worldSize, sx, sy });
-
-    if (this.pulses.size) this.requestDraw();
+    this.view = { w, h, wx0, wy0, worldSize, zones: this.allZones().map((z) => this.zoneScreen(z, { worldSize, sx, sy })) };
+    this.maskDirty = false;
   }
 
-  private drawFog(v: {
+  private buildMask(v: {
     w: number;
     h: number;
     cellPx: number;
@@ -316,8 +414,15 @@ export class FogRenderer {
       this.applyEdge(mctx, mw, mh, EDGE_LUT);
     }
     for (const k of expired) this.pulses.delete(k);
+  }
 
-    // Сам туман: заливка → облака → «вырезаем» открытые области маской.
+  /** Дешёвая покадровая часть: заливка, движущиеся облака, вырез по маске, свечение. */
+  private composite(): void {
+    const view = this.view;
+    if (!view) return;
+    const { w, h } = view;
+    const mw = this.mask.width;
+    const mh = this.mask.height;
     const g = this.fctx;
     g.globalCompositeOperation = 'source-over';
     g.clearRect(0, 0, w, h);
@@ -325,15 +430,24 @@ export class FogRenderer {
     const rgb = FOG_RGB[this.opts.getTheme()];
     g.fillStyle = `rgba(${rgb},${opacity})`;
     g.fillRect(0, 0, w, h);
-    const pat = g.createPattern(this.cloud, 'repeat');
-    if (pat) {
-      g.save();
-      g.globalAlpha = 0.55;
-      g.translate(-(v.wx0 * 0.5) % 256, -(v.wy0 * 0.5) % 256);
+    // Два слоя облаков: крупные плывут по ветру, мелкие «нити» — быстрее и под углом.
+    // Слагаемое от положения карты даёт параллакс: при движении по карте туман «остаётся на месте».
+    const layers: [HTMLCanvasElement, { x: number; y: number }, number, number, number][] = [
+      [this.cloudBig, this.offA, 2.4, 0.6, 0.95],
+      [this.cloudFine, this.offB, 1.5, 0.85, 0.8],
+    ];
+    for (const [tex, off, scale, parallax, alpha] of layers) {
+      const pat = g.createPattern(tex, 'repeat');
+      if (!pat) continue;
+      const S = 256 * scale;
+      const ox = (((off.x - view.wx0 * parallax) % S) + S) % S;
+      const oy = (((off.y - view.wy0 * parallax) % S) + S) % S;
+      pat.setTransform(new DOMMatrix().translate(ox - S, oy - S).scale(scale));
+      g.globalAlpha = alpha;
       g.fillStyle = pat;
-      g.fillRect(0, 0, w + 256, h + 256);
-      g.restore();
+      g.fillRect(0, 0, w, h);
     }
+    g.globalAlpha = 1;
     g.globalCompositeOperation = 'destination-out';
     g.imageSmoothingEnabled = true;
     g.imageSmoothingQuality = 'high';
@@ -350,14 +464,14 @@ export class FogRenderer {
     gl.fillStyle = 'rgb(61,220,151)';
     gl.fillRect(0, 0, this.glow.width, this.glow.height);
     g.globalCompositeOperation = 'source-atop';
-    g.globalAlpha = 0.42;
+    // свечение слегка «дышит» вместе с порывами ветра
+    g.globalAlpha = 0.36 + (this.opts.getWind() > 0 ? 0.08 * Math.sin(this.clock * 1.3) : 0.06);
     g.drawImage(this.glow, 0, 0, this.glow.width, this.glow.height, 0, 0, w, h);
     g.globalAlpha = 1;
     g.globalCompositeOperation = 'source-over';
 
     // Исключённые зоны снова закрываем туманом, даже если внутри что-то было открыто.
-    for (const z of this.allZones()) {
-      const c = this.zoneScreen(z, v);
+    for (const c of view.zones) {
       g.beginPath();
       g.arc(c.x, c.y, c.r, 0, Math.PI * 2);
       g.fillStyle = `rgba(${rgb},${Math.min(1, opacity + 0.05)})`;

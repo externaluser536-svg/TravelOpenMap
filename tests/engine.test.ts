@@ -16,7 +16,7 @@ let destination: typeof import('../src/core/geo').destination;
 let cellOf: typeof import('../src/core/fog').cellOf;
 
 const monaco = { lng: 7.4246, lat: 43.7384 };
-let clock = Date.UTC(2026, 8, 28, 10, 0, 0);
+let clock = new Date().setHours(12, 0, 0, 0); // «сегодня», чтобы статистика дня совпадала
 const fix = (p: { lng: number; lat: number }, dtSec = 5) => ({ ...p, accuracy: 8, t: (clock += dtSec * 1000) });
 
 describe('engine', () => {
@@ -164,5 +164,68 @@ describe('engine', () => {
     await engine.reloadFromDb();
     expect(engine.grid.count).toBe(cells);
     expect(useApp.getState().stats.distanceM).toBeCloseTo(dist, 5);
+  });
+});
+
+describe('тренировка + движок', () => {
+  it('тренировка не открывает туман, но даёт дистанцию, XP, челлендж и активный день', async () => {
+    const { workoutEngine } = await import('../src/state/workoutEngine');
+    engine.quiet = true;
+    await engine.resetAll();
+    useApp.getState().patch({ position: null });
+    usePrefs.getState().set({ zones: [], completed: {} });
+    const t0 = Date.now() - 900_000;
+    workoutEngine.start('run', t0);
+    let p = monaco;
+    for (let i = 0; i < 300; i++) {
+      p = destination(p, 90, 8);
+      engine.onFix({ ...p, accuracy: 6, t: t0 + i * 2500 });
+    }
+    expect(engine.grid.count).toBe(0); // туман не тронут
+    workoutEngine.publish();
+    expect(useApp.getState().workoutLive!.distanceM).toBeGreaterThan(2300);
+    const w = await workoutEngine.finish(t0 + 300 * 2500 + 1000);
+    expect(w).not.toBeNull();
+    expect(w!.distanceM).toBeGreaterThan(2300);
+    expect(w!.splits.length).toBe(2);
+    engine.publish();
+    const s = useApp.getState();
+    expect(s.workoutLive).toBeNull();
+    expect(s.workouts).toHaveLength(1);
+    expect(s.stats.workouts).toBe(1);
+    expect(s.stats.longestRunM).toBeGreaterThan(2300);
+    expect(s.stats.cells).toBe(0);
+    expect(s.stats.streak).toBeGreaterThanOrEqual(1); // тренировка делает день активным
+    expect(s.challenges.find((c) => c.def.id === 'wk_1')!.done).toBe(true);
+    expect(s.level.xp).toBeGreaterThan(40);
+    // и после отмены тренировки всё чисто
+    await workoutEngine.remove(w!.id);
+    engine.publish();
+    expect(useApp.getState().stats.workouts).toBe(0);
+  });
+
+  it('слишком короткая тренировка не сохраняется', async () => {
+    const { workoutEngine } = await import('../src/state/workoutEngine');
+    workoutEngine.start('walk', Date.now() - 60_000);
+    engine.onFix({ ...monaco, accuracy: 5, t: Date.now() - 50_000 });
+    expect(await workoutEngine.finish()).toBeNull();
+    expect(useApp.getState().workouts).toHaveLength(0);
+  });
+
+  it('поездки: сохранение, порядок и удаление', async () => {
+    const { saveTrip, removeTrip, draftTrip } = await import('../src/state/trips');
+    const a = draftTrip('PT');
+    a.title = 'Лиссабон';
+    a.startDate = '2026-12-01';
+    a.endDate = '2026-12-08';
+    a.status = 'planned';
+    expect(a.currency).toBe('EUR'); // валюта страны подставляется автоматически
+    await saveTrip(a);
+    expect(useApp.getState().trips.map((t) => t.title)).toEqual(['Лиссабон']);
+    await saveTrip({ ...a, title: 'Лиссабон-2' });
+    expect(useApp.getState().trips).toHaveLength(1);
+    expect(useApp.getState().trips[0].title).toBe('Лиссабон-2');
+    await removeTrip(a.id);
+    expect(useApp.getState().trips).toHaveLength(0);
   });
 });

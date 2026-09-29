@@ -62,7 +62,7 @@ function Daily({ q }: { q: DailyQuest }) {
   );
 }
 
-export function QuestsPage() {
+export function QuestsView() {
   const { t, tn } = useT();
   const level = useApp((s) => s.level);
   const stats = useApp((s) => s.stats);
@@ -78,8 +78,7 @@ export function QuestsPage() {
   const closest = challenges.filter((c) => !c.done).sort((a, b) => b.progress - a.progress).slice(0, 3);
 
   return (
-    <div className="page">
-      <div className="page-scroll pad-top">
+    <>
         <section className="level-card">
           <div className="lv-glow" />
           <ProgressRing value={level.progress} size={104} stroke={7} color="url(#lvgrad)">
@@ -167,7 +166,6 @@ export function QuestsPage() {
           );
         })}
         <div style={{ height: 24 }} />
-      </div>
-    </div>
+    </>
   );
 }

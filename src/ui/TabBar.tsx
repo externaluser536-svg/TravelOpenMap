@@ -7,7 +7,7 @@ import { tap } from '../services/haptics';
 const TABS: { id: Screen; icon: string; label: string }[] = [
   { id: 'map', icon: 'map', label: 'tab.map' },
   { id: 'notes', icon: 'notebook', label: 'tab.notes' },
-  { id: 'quests', icon: 'trophy', label: 'tab.quests' },
+  { id: 'workout', icon: 'zap', label: 'tab.workout' },
   { id: 'profile', icon: 'user', label: 'tab.profile' },
 ];
 

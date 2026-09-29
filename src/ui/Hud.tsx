@@ -8,6 +8,7 @@ import { mapApi } from '../map/MapView';
 import { cancelMode, locateMe, saveZoneDraft, toggleMeasure, togglePeek } from '../state/actions';
 import { cardinal, formatArea, formatCoords, formatDistance, haversine, pathLength } from '../core/geo';
 import { startLocation } from '../services/location';
+import { WorkoutPanel } from './pages/WorkoutPage';
 import { tap } from '../services/haptics';
 
 export function Hud() {
@@ -26,9 +27,10 @@ export function Hud() {
   const units = usePrefs((s) => s.units);
   const patch = useApp((s) => s.patch);
   const orient = useApp((s) => s.orientMap);
+  const training = useApp((s) => s.workoutLive !== null);
 
   const banner = (() => {
-    if (mode !== 'normal') return null;
+    if (mode !== 'normal' || training) return null;
     if (gps === 'denied')
       return { icon: 'locate-off', text: t('gps.denied'), tone: 'warn', action: { label: t('gps.retry'), run: () => void startLocation() } };
     if (inZone) return { icon: 'shield', text: t('gps.in_zone'), tone: 'warn' };
@@ -43,7 +45,7 @@ export function Hud() {
   return (
     <div className="hud">
       <header className="hud-top">
-        <button className="level-chip glass" onClick={() => patch({ screen: 'quests' })} aria-label={t('tab.quests')}>
+        <button className="level-chip glass" onClick={() => patch({ screen: 'profile', profileTab: 'quests' })} aria-label={t('profile.tab.quests')}>
           <ProgressRing value={level.progress} size={46} stroke={4}>
             <b>{level.level}</b>
           </ProgressRing>
@@ -77,7 +79,7 @@ export function Hud() {
         </div>
       )}
 
-      <div className={`fab-col ${mode === 'measure' ? 'raised' : mode === 'normal' ? '' : 'hidden'}`}>
+      <div className={`fab-col ${training ? 'raised' : mode === 'measure' ? 'raised' : mode === 'normal' ? '' : 'hidden'}`}>
         {Math.abs(bearing) > 1 && !orient && (
           <button className="fab glass" onClick={() => { tap(); mapApi.resetNorth(); }} aria-label={t('hud.north')}>
             <CompassRose size={26} angle={-bearing} />
@@ -94,7 +96,8 @@ export function Hud() {
         </button>
       </div>
 
-      {mode === 'normal' && (
+      {training && <WorkoutPanel />}
+      {mode === 'normal' && !training && (
         <div className="stat-pill glass">
           <span>
             <Icon name="map" size={14} />

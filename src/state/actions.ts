@@ -5,6 +5,7 @@ import { usePrefs } from './prefs';
 import { engine } from './engine';
 import { getMediaForNote, uid } from '../data/db';
 import { mapApi } from '../map/MapView';
+import { openMap } from '../map/maps';
 import { startLocation } from '../services/location';
 import { startCompass } from '../services/compass';
 import { tap } from '../services/haptics';
@@ -114,4 +115,12 @@ export function cancelMode(): void {
   if (st.mode === 'pick') st.patch({ mode: 'normal', sheet: { type: 'editor' } });
   else if (st.mode === 'zone') st.patch({ mode: 'normal', zoneDraft: null, sheet: { type: 'zones' } });
   else st.patch({ mode: 'normal', measurePoints: [] });
+}
+
+/** Делает карту активной и показывает её область. */
+export async function activateMap(id: string): Promise<void> {
+  const info = await openMap(id);
+  if (!info) return;
+  usePrefs.getState().set({ activeMapId: id });
+  useApp.getState().patch({ mapInfo: info, fitBounds: { bounds: info.bounds, nonce: Date.now() } });
 }

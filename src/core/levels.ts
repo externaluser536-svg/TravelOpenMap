@@ -65,12 +65,13 @@ export function levelFromXp(xp: number): LevelInfo {
 }
 
 /** XP за «сырую» активность (без наград за челленджи). */
-export function baseXp(s: Pick<Stats, 'areaM2' | 'notes' | 'photos' | 'videos' | 'distanceM'>): number {
+export function baseXp(s: Pick<Stats, 'areaM2' | 'notes' | 'photos' | 'videos' | 'distanceM'> & { workoutDistanceM?: number }): number {
   return (
     Math.floor(s.areaM2 / M2_PER_XP) +
     s.notes * XP_PER_NOTE +
     s.photos * XP_PER_PHOTO +
     s.videos * XP_PER_VIDEO +
-    Math.floor(s.distanceM / M_PER_XP)
+    Math.floor(s.distanceM / M_PER_XP) +
+    Math.floor((s.workoutDistanceM ?? 0) / M_PER_XP)
   );
 }

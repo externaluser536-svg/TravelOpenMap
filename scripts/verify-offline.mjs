@@ -107,13 +107,39 @@ try {
   }
   await page.waitForTimeout(1500);
 
-  // экран приватности (измеряет ресурсы изнутри приложения)
+  // экран приватности (измеряет ресурсы изнутри приложения). Порядок вкладок: карта, заметки, «+», спорт, профиль
   await dismiss();
-  await page.locator('.tab').nth(3).click();
+  await page.locator('.tab').nth(3).click(); // профиль (в .tab «+» не входит)
+  await page.waitForTimeout(500);
+  const scrollDown = () => page.evaluate(() => document.querySelector('.page-scroll').scrollTo(0, 99999));
+  await scrollDown();
   await page.locator('.card.list .row').nth(4).click();
   await page.waitForTimeout(1800);
   const shown = await page.locator('.sh-num').innerText();
   check(shown === '0', 'экран «Приватность» показывает 0 внешних запросов', shown);
+  await page.locator('.sheet .icon-btn[aria-label="close"]').click();
+
+  // 3б) шлюз загрузки карт: по умолчанию выключен — iframe нет, кнопка «Скачать» недоступна
+  await page.waitForTimeout(400);
+  await scrollDown();
+  await page.locator('.card.list .row').nth(1).click(); // «Офлайн-карты»
+  await page.waitForTimeout(400);
+  await page.locator('.sheet .btn.primary').first().click(); // «Добавить страну»
+  await page.waitForTimeout(600);
+  await page.fill('.picker .search input', 'Порту');
+  await page.locator('.country-row').first().click();
+  await page.waitForTimeout(500);
+  check((await page.locator('iframe').count()) === 0, 'по умолчанию сетевой шлюз (iframe) отсутствует в DOM');
+  check(await page.locator('.sheet .btn.primary.block').isDisabled(), 'по умолчанию кнопка «Скачать карту» недоступна');
+  check(await page.evaluate(() => JSON.parse(localStorage.getItem('tom.prefs.v1')).state.allowDownloads !== true), 'настройка «разрешить загрузку» по умолчанию выключена');
+  // включение переключателя само по себе тоже ничего не отправляет: шлюз создаётся только по нажатию «Скачать»/«Проверить»
+  await page.locator('.source-card .switch').click();
+  await page.waitForTimeout(500);
+  check(await page.locator('.sheet .btn.primary.block').isDisabled(), 'без адреса источника «Скачать карту» остаётся недоступной');
+  check((await page.locator('iframe').count()) === 0, 'после включения загрузки iframe всё равно не создаётся до явного запроса');
+  await page.locator('.source-card .switch').click(); // вернуть выключенное состояние
+  await page.locator('.sheet .icon-btn[aria-label="close"]').click();
+  await page.waitForTimeout(300);
 
   // 4) зондирование: внешние обращения должны блокироваться CSP
   const probes = await page.evaluate(async () => {
