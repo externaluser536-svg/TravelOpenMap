@@ -127,7 +127,7 @@ npm run release:test # тестовый release: APK + AAB + веб-архив �
 
 ## ⚠️ Ограничения
 
-* Release-сборка Android (APK/AAB) настроена и собирается в GitHub Actions ([`release-test.yml`](.github/workflows/release-test.yml)); подписана публичным тестовым ключом — только для проверки.
+* Release-сборка Android (APK/AAB) собирается в GitHub Actions ([`release-test.yml`](.github/workflows/release-test.yml)) и публикуется пре-релизом ([v0.4.0-test.3](https://github.com/externaluser536-svg/TravelOpenMap/releases/tag/v0.4.0-test.3)); подписана публичным тестовым ключом — только для проверки. Сборка на CI прошла успешно; установка APK на устройство не проверялась.
 * Проверено в Chromium (юнит-тесты, e2e, скриншоты). Нативные сборки Android/iOS, реальные датчики GPS и компаса, камера телефона, поведение iOS WKWebView на устройствах не проверялись.
 * Загрузка стран проверена на локальном PMTiles-сервере; реальный сервер Protomaps не проверялся. Источник должен поддерживать HTTP Range и CORS.
 * Туман и тренировки записываются, пока приложение на экране; фонового GPS нет.

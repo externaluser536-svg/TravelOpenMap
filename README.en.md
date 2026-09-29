@@ -95,7 +95,7 @@ Android/iOS builds, signing, maps, troubleshooting: **[INSTALLATION.en.md](INSTA
 
 ## ⚠️ Limitations
 
-* The Android release build (APK/AAB) is configured and built in GitHub Actions ([`release-test.yml`](.github/workflows/release-test.yml)); it is signed with a public test key — for testing only.
+* The Android release build (APK/AAB) is built in GitHub Actions ([`release-test.yml`](.github/workflows/release-test.yml)) and published as a pre-release ([v0.4.0-test.3](https://github.com/externaluser536-svg/TravelOpenMap/releases/tag/v0.4.0-test.3)); it is signed with a public test key — for testing only. The CI build passed; installing the APK on a device was not tested.
 * Verified in Chromium (unit tests, e2e, screenshots). Native Android/iOS builds, real GPS/compass sensors, phone camera, and iOS WKWebView behaviour were not tested on devices.
 * Country download was tested against a local PMTiles server; the real Protomaps server was not. The source must support HTTP Range and CORS.
 * Fog and workouts are recorded while the app is on screen; no background GPS.
