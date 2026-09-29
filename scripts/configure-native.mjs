@@ -25,8 +25,8 @@ if (existsSync(manifest)) {
   const block = [
     '    <!-- Permissions (TravelOpenMap) -->',
     keepInternet
-      ? '    <!-- INTERNET нужен только для необязательной загрузки карт стран (по умолчанию выключена, CSP запрещает всё остальное). Строгая сборка: --offline-only -->\n    <uses-permission android:name="android.permission.INTERNET" />'
-      : '    <!-- INTERNET намеренно отсутствует (сборка --offline-only): приложение работает полностью офлайн, загрузка карт стран недоступна. -->',
+      ? '    <!-- INTERNET нужен только для необязательной загрузки карт стран (по умолчанию выключена, CSP запрещает всё остальное). Строгая сборка: флаг offline-only в scripts/configure-native.mjs -->\n    <uses-permission android:name="android.permission.INTERNET" />'
+      : '    <!-- INTERNET намеренно отсутствует (сборка offline-only): приложение работает полностью офлайн, загрузка карт стран недоступна. -->',
     '    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />',
     '    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />',
     '    <uses-permission android:name="android.permission.CAMERA" />',

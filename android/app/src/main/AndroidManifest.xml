@@ -36,7 +36,7 @@
     </application>
 
     <!-- Permissions (TravelOpenMap) -->
-    <!-- INTERNET нужен только для необязательной загрузки карт стран (по умолчанию выключена, CSP запрещает всё остальное). Строгая сборка: --offline-only -->
+    <!-- INTERNET нужен только для необязательной загрузки карт стран (по умолчанию выключена, CSP запрещает всё остальное). Строгая сборка: флаг offline-only в scripts/configure-native.mjs -->
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
