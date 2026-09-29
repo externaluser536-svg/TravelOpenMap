@@ -164,6 +164,9 @@ export class FogRenderer {
   private clock = 0; // накопленное «время ветра», с
   private offA = { x: 0, y: 0 };
   private offB = { x: 0, y: 0 };
+  /** Накопленное смещение центра карты в экранных пикселях (не зависит от zoom — масштабирование не разгоняет облака). */
+  readonly pan = { x: 0, y: 0 };
+  private lastCenter: { x: number; y: number } | null = null;
   private view: { w: number; h: number; wx0: number; wy0: number; worldSize: number; zones: { x: number; y: number; r: number }[] } | null = null;
   private peek = false;
   private onRender = () => this.requestDraw();
@@ -317,6 +320,16 @@ export class FogRenderer {
     const cellPx = worldSize / CELLS_PER_AXIS;
     const wx0 = lngToX(center.lng) * worldSize;
     const wy0 = latToY(center.lat) * worldSize;
+    {
+      // сдвиг центра в долях мира × текущий размер мира = сдвиг в экранных пикселях; при чистом масштабировании он равен нулю
+      const cx = lngToX(center.lng);
+      const cy = latToY(center.lat);
+      if (this.lastCenter) {
+        this.pan.x += (cx - this.lastCenter.x) * worldSize;
+        this.pan.y += (cy - this.lastCenter.y) * worldSize;
+      }
+      this.lastCenter = { x: cx, y: cy };
+    }
 
     // Аффинное преобразование «мировые пиксели → экран», откалиброванное по MapLibre.
     const pA = map.project(center);
@@ -452,8 +465,8 @@ export class FogRenderer {
       const pat = g.createPattern(tex, 'repeat');
       if (!pat) continue;
       const S = 256 * scale;
-      const ox = (((off.x - view.wx0 * parallax) % S) + S) % S;
-      const oy = (((off.y - view.wy0 * parallax) % S) + S) % S;
+      const ox = (((off.x - this.pan.x * parallax) % S) + S) % S;
+      const oy = (((off.y - this.pan.y * parallax) % S) + S) % S;
       pat.setTransform(new DOMMatrix().translate(ox - S, oy - S).scale(scale));
       g.globalAlpha = alpha;
       g.fillStyle = pat;

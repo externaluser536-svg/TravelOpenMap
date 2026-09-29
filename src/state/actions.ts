@@ -5,7 +5,7 @@ import { usePrefs } from './prefs';
 import { engine } from './engine';
 import { getMediaForNote, uid } from '../data/db';
 import { mapApi } from '../map/MapView';
-import { openMap } from '../map/maps';
+import { openAllMaps, openMap } from '../map/maps';
 import { startLocation } from '../services/location';
 import { startCompass } from '../services/compass';
 import { tap } from '../services/haptics';
@@ -191,10 +191,16 @@ export function cancelMode(): void {
   else st.patch({ mode: 'normal', measurePoints: [] });
 }
 
-/** Делает карту активной и показывает её область. */
+/** Перечитывает список установленных карт: все они рисуются вместе. */
+export async function refreshMapSources(): Promise<void> {
+  useApp.getState().patch({ mapSources: await openAllMaps() });
+}
+
+/** Делает карту основной и показывает её область. */
 export async function activateMap(id: string): Promise<void> {
   const info = await openMap(id);
   if (!info) return;
   usePrefs.getState().set({ activeMapId: id });
+  await refreshMapSources();
   useApp.getState().patch({ mapInfo: info, fitBounds: { bounds: info.bounds, nonce: Date.now() } });
 }

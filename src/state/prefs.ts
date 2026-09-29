@@ -29,8 +29,16 @@ export interface Prefs {
   developer: boolean;
   /** разрешена ли загрузка карт из сети (по умолчанию — нет: приложение полностью офлайн) */
   allowDownloads: boolean;
-  /** URL источника карт: PMTiles-файл (например, сборка Protomaps) */
+  /** URL источника карт: PMTiles-файл. Пусто — последняя ежедневная сборка Protomaps (подбирается автоматически). */
   mapSourceUrl: string;
+  /** найденная автоматически сборка и время находки (мс) */
+  resolvedSource: { url: string; at: number } | null;
+  /** после знакомства уже спрашивали про обзорную карту мира */
+  worldPrompted: boolean;
+  /** предлагать скачать карту области при приближении */
+  askAreaPrompts: boolean;
+  /** области, для которых предложение отклонено */
+  dismissedAreas: string[];
   /** вес для расчёта калорий, кг */
   weightKg: number;
   /** ник игрока (обязателен при первом запуске) */
@@ -58,6 +66,10 @@ export const DEFAULT_PREFS: Prefs = {
   developer: false,
   allowDownloads: false,
   mapSourceUrl: '',
+  resolvedSource: null,
+  worldPrompted: false,
+  askAreaPrompts: true,
+  dismissedAreas: [],
   weightKg: 70,
   nickname: '',
   avatarIcon: 'compass',

@@ -94,6 +94,29 @@ export interface MapMenu {
   y: number;
 }
 
+/** Что именно скачиваем: обзор мира, страна или область. */
+export interface DownloadJob {
+  /** ключ: WORLD, код страны или area:z/x/y */
+  id: string;
+  /** подпись в интерфейсе (без флага) */
+  name: string;
+  flag?: string;
+  bbox: [number, number, number, number];
+  maxZoom: number;
+  /** код страны для каталога (WORLD для обзора) */
+  country: string;
+  /** оценка размера, байт */
+  estimate: number;
+  /** после загрузки перейти к этой карте */
+  activate: boolean;
+}
+
+/** Запрос к пользователю перед загрузкой карты. */
+export type DownloadPrompt =
+  | { kind: 'world'; job: DownloadJob }
+  | { kind: 'consent'; job: DownloadJob }
+  | { kind: 'area'; job: DownloadJob; title: string; dismissKey: string };
+
 export interface DownloadState {
   code: string;
   name: string;
@@ -148,7 +171,10 @@ export interface AppState {
   tripDraft: Trip | null;
   download: DownloadState | null;
 
+  /** «Основная» карта: с неё начинается обзор, по ней центрируется приложение. */
   mapInfo: MapInfo | null;
+  /** Все установленные карты — рисуются вместе (обзор мира снизу, детальные поверх). */
+  mapSources: MapInfo[];
   mapMissing: boolean;
 
   selectedNoteId: string | null;
@@ -157,6 +183,7 @@ export interface AppState {
   draft: NoteDraft | null;
   zoneDraft: ZoneDraft | null;
   fogDraft: FogDraft | null;
+  downloadPrompt: DownloadPrompt | null;
   canUndoFog: boolean;
   mapMenu: MapMenu | null;
 
@@ -210,6 +237,7 @@ export const useApp = create<AppState>((set, get) => ({
   download: null,
 
   mapInfo: null,
+  mapSources: [],
   mapMissing: false,
 
   selectedNoteId: null,
@@ -218,6 +246,7 @@ export const useApp = create<AppState>((set, get) => ({
   draft: null,
   zoneDraft: null,
   fogDraft: null,
+  downloadPrompt: null,
   canUndoFog: false,
   mapMenu: null,
 

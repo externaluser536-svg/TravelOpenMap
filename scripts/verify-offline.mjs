@@ -50,7 +50,7 @@ try {
   page.on('pageerror', (e) => console.error('[pageerror]', e.message));
   await page.exposeFunction('__csp', (u) => csp.push(u));
   await page.addInitScript(() => {
-    localStorage.setItem('tom.prefs.v1', JSON.stringify({ state: { onboarded: true, lang: 'ru', theme: 'dark', nickname: 'Тест' }, version: 0 }));
+    localStorage.setItem('tom.prefs.v1', JSON.stringify({ state: { onboarded: true, lang: 'ru', theme: 'dark', nickname: 'Тест', worldPrompted: true }, version: 0 }));
     document.addEventListener('securitypolicyviolation', (e) => window.__csp(`${e.violatedDirective} ← ${e.blockedURI}`));
   });
   await page.goto(server.url);
@@ -149,12 +149,19 @@ try {
   await page.locator('.country-row').first().click();
   await page.waitForTimeout(500);
   check((await page.locator('iframe').count()) === 0, 'по умолчанию сетевой шлюз (iframe) отсутствует в DOM');
-  check(await page.locator('.sheet .btn.primary.block').isDisabled(), 'по умолчанию кнопка «Скачать карту» недоступна');
+  check(await page.locator('.sheet .btn.primary.block').isEnabled(), 'кнопка «Скачать карту» видна и доступна сразу после выбора страны');
   check(await page.evaluate(() => JSON.parse(localStorage.getItem('tom.prefs.v1')).state.allowDownloads !== true), 'настройка «разрешить загрузку» по умолчанию выключена');
+  // нажатие «Скачать» без разрешения не ходит в сеть: сначала окно с согласием
+  await page.locator('.sheet .btn.primary.block').click();
+  await page.waitForSelector('.download-modal');
+  check((await page.locator('iframe').count()) === 0, 'по нажатию «Скачать» сначала запрашивается согласие — шлюз ещё не создан');
+  await page.locator('.download-modal .btn.ghost').click(); // «Отмена»
+  await page.waitForTimeout(300);
+  check((await page.locator('.download-modal').count()) === 0 && (await page.locator('iframe').count()) === 0, 'отказ закрывает окно, сеть не задействована');
+  check(await page.evaluate(() => JSON.parse(localStorage.getItem('tom.prefs.v1')).state.allowDownloads !== true), 'после отказа загрузка остаётся выключенной');
   // включение переключателя само по себе тоже ничего не отправляет: шлюз создаётся только по нажатию «Скачать»/«Проверить»
   await page.locator('.source-card .switch').click();
   await page.waitForTimeout(500);
-  check(await page.locator('.sheet .btn.primary.block').isDisabled(), 'без адреса источника «Скачать карту» остаётся недоступной');
   check((await page.locator('iframe').count()) === 0, 'после включения загрузки iframe всё равно не создаётся до явного запроса');
   await page.locator('.source-card .switch').click(); // вернуть выключенное состояние
   await page.locator('.sheet .icon-btn[aria-label="close"]').click();
@@ -186,6 +193,25 @@ try {
   check(local.some((u) => u.includes('map-assets/sprites/')), 'спрайты карты — локальные');
   check(failedReqs.filter((u) => !u.includes('example.com')).length === 0, 'нет неудавшихся запросов', failedReqs.slice(0, 3).join(', '));
   console.log(`\nВсего запросов: ${requests.length}; локальных: ${local.length}; внешних (не считая зондов): ${real.length}`);
+
+  // 6) после знакомства спрашиваем про обзорную карту мира — и не выходим в сеть, пока пользователь не согласился
+  const ctx2 = await browser.newContext({ viewport: { width: 390, height: 844 }, locale: 'ru-RU' });
+  const req2 = [];
+  ctx2.on('request', (r) => req2.push(r.url()));
+  const page2 = await ctx2.newPage();
+  await page2.addInitScript(() => localStorage.setItem('tom.prefs.v1', JSON.stringify({ state: { onboarded: true, lang: 'ru', theme: 'dark', nickname: 'Тест' }, version: 0 })));
+  await page2.goto(server.url);
+  await page2.waitForSelector('.download-modal', { timeout: 20000 });
+  check(true, 'после знакомства показан вопрос про обзорную карту мира');
+  check((await page2.locator('iframe').count()) === 0, 'пока нет согласия, сетевого шлюза нет');
+  check(req2.filter((u) => !u.startsWith(origin) && !u.startsWith('blob:') && !u.startsWith('data:')).length === 0, 'до согласия — ни одного внешнего запроса');
+  await page2.locator('.download-modal .btn.ghost').click(); // «Не сейчас»
+  await page2.waitForTimeout(400);
+  check((await page2.locator('.download-modal').count()) === 0, '«Не сейчас» закрывает вопрос');
+  const st2 = await page2.evaluate(() => JSON.parse(localStorage.getItem('tom.prefs.v1')).state);
+  check(st2.worldPrompted === true && st2.allowDownloads !== true, 'после отказа вопрос не повторяется, загрузка остаётся выключенной');
+  check(req2.filter((u) => !u.startsWith(origin) && !u.startsWith('blob:') && !u.startsWith('data:')).length === 0, 'после отказа внешних запросов по-прежнему нет');
+  await ctx2.close();
 } finally {
   await browser.close();
   server.stop();

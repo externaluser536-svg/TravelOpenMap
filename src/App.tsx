@@ -7,7 +7,7 @@ import { usePrefs } from './state/prefs';
 import { useResolvedTheme } from './ui/hooks';
 import { engine } from './state/engine';
 import { MapView } from './map/MapView';
-import { openMap, loadCatalog } from './map/maps';
+import { openMap, openAllMaps, loadCatalog } from './map/maps';
 import { Hud } from './ui/Hud';
 import { TabBar } from './ui/TabBar';
 import { NotesPage } from './ui/pages/NotesPage';
@@ -31,6 +31,8 @@ import { LevelUp, Onboarding, Toasts } from './ui/Overlays';
 import { startLocation } from './services/location';
 import { startCompass } from './services/compass';
 import { cancelMode } from './state/actions';
+import { DownloadPrompts } from './ui/DownloadPrompts';
+import { startPromptWatchers } from './state/prompts';
 
 export default function App() {
   const screen = useApp((s) => s.screen);
@@ -52,7 +54,8 @@ export default function App() {
           prefs.set({ activeMapId: first.id });
         }
       }
-      if (info) useApp.getState().patch({ mapInfo: info });
+      const sources = await openAllMaps();
+      if (info) useApp.getState().patch({ mapInfo: info, mapSources: sources });
       if (usePrefs.getState().onboarded && !import.meta.env.MODE.includes('demo')) {
         void startLocation();
         void startCompass(false);
@@ -63,6 +66,9 @@ export default function App() {
   useEffect(() => {
     document.documentElement.lang = lang;
   }, [lang]);
+
+  // ---- вопросы про загрузку карт (обзор мира после знакомства)
+  useEffect(() => startPromptWatchers(), []);
 
   // ---- статус-бар и кнопка «Назад» на Android
   useEffect(() => {
@@ -121,6 +127,7 @@ export default function App() {
       <Toasts />
       <LevelUp />
       <Onboarding />
+      {mapInfo && <DownloadPrompts />}
     </div>
   );
 }

@@ -5,6 +5,7 @@ import 'maplibre-gl/dist/maplibre-gl.css';
 import { useApp } from '../state/store';
 import { usePrefs, resolveTheme } from '../state/prefs';
 import { useResolvedTheme } from '../ui/hooks';
+import { scheduleAreaCheck } from '../state/prompts';
 import { engine } from '../state/engine';
 import { FogRenderer } from './fog-renderer';
 import { NoteClusters, categoryRing, type ClusterItem } from './clusters';
@@ -41,6 +42,11 @@ export const mapApi = {
     return { lng: c.lng, lat: c.lat };
   },
 };
+
+/** С обзорной картой мира можно отдаляться до континентов, без неё — только до региона. */
+function minZoomFor(sources: readonly { bounds: [number, number, number, number] }[]): number {
+  return sources.some((s) => s.bounds[2] - s.bounds[0] > 300) ? 2 : 6;
+}
 
 const EMPTY_FC = { type: 'FeatureCollection' as const, features: [] };
 
@@ -127,10 +133,10 @@ export function MapView() {
     const pos = useApp.getState().position;
     const map = new MlMap({
       container: ref.current,
-      style: buildStyle({ theme, lang, tilesUrl: mapInfo.tilesUrl }),
+      style: buildStyle({ theme, lang, sources: useApp.getState().mapSources.length ? useApp.getState().mapSources : [mapInfo] }),
       center: pos ? [pos.lng, pos.lat] : mapInfo.center,
       zoom: 15.5,
-      minZoom: 6,
+      minZoom: minZoomFor(useApp.getState().mapSources),
       maxZoom: 19.5,
       maxPitch: 0,
       attributionControl: false,
@@ -195,8 +201,8 @@ export function MapView() {
         if (st.mode === 'pick' && st.draft) st.patch({ draft: { ...st.draft, lng: c.lng, lat: c.lat, manual: true } });
         if (st.mode === 'zone' && st.zoneDraft) st.patch({ zoneDraft: { ...st.zoneDraft, lng: c.lng, lat: c.lat } });
         if (st.mode === 'fogedit' && st.fogDraft?.tool === 'circle') st.patch({ fogDraft: { ...st.fogDraft, lng: fp?.lng ?? c.lng, lat: fp?.lat ?? c.lat } });
-        const [w, s, e, n] = mapInfo.bounds;
-        const missing = c.lng < w || c.lng > e || c.lat < s || c.lat > n;
+        const covering = st.mapSources.length ? st.mapSources : [mapInfo];
+        const missing = !covering.some(({ bounds: [w, s, e, n] }) => c.lng >= w && c.lng <= e && c.lat >= s && c.lat <= n);
         if (missing !== st.mapMissing) st.patch({ mapMissing: missing });
       });
     });
@@ -273,7 +279,12 @@ export function MapView() {
         syncRef.current();
       }
     });
-    map.on('moveend', () => syncRef.current());
+    map.on('moveend', () => {
+      syncRef.current();
+      // приблизились к области без подробной карты — предложим скачать (после паузы)
+      const c = map.getCenter();
+      scheduleAreaCheck({ lng: c.lng, lat: c.lat, zoom: map.getZoom() });
+    });
 
     map.once('idle', () => {
       setReady(true);
@@ -302,19 +313,27 @@ export function MapView() {
       fogRef.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mapInfo?.id]);
+  }, [!!mapInfo]);
 
-  // ---------------------------------------------------------------- смена темы / языка
-  const firstStyle = useRef(true);
+  // ---------------------------------------------------------------- смена темы / языка / набора карт
+  const mapSources = useApp((s) => s.mapSources);
+  const sourcesKey = mapSources.map((m) => `${m.id}:${m.maxzoom}`).join('|');
+  const appliedStyle = useRef('');
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !mapInfo) return;
-    if (firstStyle.current) {
-      firstStyle.current = false;
+    const key = `${theme}/${lang}/${sourcesKey}`;
+    if (!appliedStyle.current) {
+      // стиль при создании карты уже собран из текущего набора
+      appliedStyle.current = key;
       return;
     }
-    map.setStyle(buildStyle({ theme, lang, tilesUrl: mapInfo.tilesUrl }), { diff: false });
-  }, [theme, lang, mapInfo]);
+    if (appliedStyle.current === key) return;
+    appliedStyle.current = key;
+    map.setStyle(buildStyle({ theme, lang, sources: mapSources.length ? mapSources : [mapInfo] }), { diff: false });
+    map.setMinZoom(minZoomFor(mapSources));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [theme, lang, sourcesKey, !!mapInfo]);
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;

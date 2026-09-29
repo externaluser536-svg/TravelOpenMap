@@ -57,18 +57,46 @@ export function flavorFor(theme: MapTheme): Flavor {
   return { ...namedFlavor(theme), ...(theme === 'dark' ? DARK_TWEAK : LIGHT_TWEAK) };
 }
 
-export function buildStyle(opts: { theme: MapTheme; lang: string; tilesUrl: string }): StyleSpecification {
+/** Достаточное для стиля описание карты-источника. */
+export interface StyleSource {
+  id: string;
+  tilesUrl: string;
+  bounds: [number, number, number, number];
+  maxzoom: number;
+}
+
+type Box = [number, number, number, number];
+const area = (b: Box) => Math.max(0, b[2] - b[0]) * Math.max(0, b[3] - b[1]);
+const inside = (a: Box, b: Box) => a[0] >= b[0] - 1e-6 && a[1] >= b[1] - 1e-6 && a[2] <= b[2] + 1e-6 && a[3] <= b[3] + 1e-6;
+
+/**
+ * Порядок отрисовки: сначала самые обширные карты (обзор мира), поверх — детальные.
+ * Карта, целиком лежащая внутри другой с не меньшей детализацией, ничего не добавляет и пропускается.
+ */
+export function orderSources<T extends { bounds: Box; maxzoom: number }>(list: readonly T[]): T[] {
+  const sorted = [...list].sort((a, b) => area(b.bounds) - area(a.bounds) || a.maxzoom - b.maxzoom);
+  return sorted.filter((s, i) => !sorted.some((o, j) => j !== i && inside(s.bounds, o.bounds) && s.maxzoom <= o.maxzoom && (area(o.bounds) > area(s.bounds) || j < i)));
+}
+
+export function buildStyle(opts: { theme: MapTheme; lang: string; sources: readonly StyleSource[] }): StyleSpecification {
+  const flavor = flavorFor(opts.theme);
+  const sources: StyleSpecification['sources'] = {};
+  const layerList: StyleSpecification['layers'] = [];
+  orderSources(opts.sources).forEach((src, i) => {
+    const name = `m${i}`;
+    sources[name] = {
+      type: 'vector',
+      url: src.tilesUrl,
+      ...(i === 0 ? { attribution: '© участники <a href="https://www.openstreetmap.org/copyright" target="_blank">OpenStreetMap</a>' } : {}),
+    };
+    // у каждого источника свой набор слоёв; идентификаторы получают префикс, чтобы не пересекаться
+    for (const l of layers(name, flavor, { lang: opts.lang }) as StyleSpecification['layers']) layerList.push({ ...l, id: `${name}-${l.id}` } as StyleSpecification['layers'][number]);
+  });
   return {
     version: 8,
     glyphs: appUrl('map-assets/fonts/{fontstack}/{range}.pbf'),
     sprite: appUrl(`map-assets/sprites/${opts.theme}`),
-    sources: {
-      osm: {
-        type: 'vector',
-        url: opts.tilesUrl,
-        attribution: '© участники <a href="https://www.openstreetmap.org/copyright" target="_blank">OpenStreetMap</a>',
-      },
-    },
-    layers: layers('osm', flavorFor(opts.theme), { lang: opts.lang }) as StyleSpecification['layers'],
+    sources,
+    layers: layerList,
   };
 }

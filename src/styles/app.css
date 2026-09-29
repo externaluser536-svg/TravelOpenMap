@@ -3645,3 +3645,76 @@ select.input {
 .btn[aria-disabled='true'] {
   opacity: 0.5;
 }
+
+/* ───────────────────────── загрузка карт: вопросы и ход ───────────────────────── */
+.download-modal {
+  display: grid;
+  gap: 12px;
+  justify-items: stretch;
+  text-align: center;
+}
+.dm-ic {
+  justify-self: center;
+  width: 64px;
+  height: 64px;
+  border-radius: 22px;
+  display: grid;
+  place-items: center;
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 16%, var(--surface-solid));
+  border: 1px solid color-mix(in srgb, var(--accent) 35%, transparent);
+}
+.dm-ic.sm {
+  width: 36px;
+  height: 36px;
+  border-radius: 12px;
+  flex: none;
+}
+.download-modal small {
+  line-height: 1.4;
+}
+.download-modal p {
+  color: var(--text);
+  font-size: 15px;
+  font-weight: 500;
+  line-height: 1.45;
+}
+.area-prompt {
+  position: absolute;
+  z-index: 12;
+  left: 12px;
+  right: 12px;
+  top: calc(var(--safe-t) + 74px);
+  padding: 12px 14px;
+  border-radius: 22px;
+  display: grid;
+  gap: 10px;
+  pointer-events: auto;
+  animation: rise 0.35s ease-out;
+}
+.area-prompt.err {
+  border-color: color-mix(in srgb, var(--danger) 55%, transparent);
+}
+.ap-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  justify-content: space-between;
+}
+.ap-main {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+.ap-main small {
+  line-height: 1.35;
+}
+.ap-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+.area-prompt .bar {
+  height: 6px;
+}

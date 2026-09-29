@@ -3,15 +3,17 @@ import { useApp } from '../../state/store';
 import { usePrefs } from '../../state/prefs';
 import { useT } from '../../i18n';
 import { Icon } from '../icons';
-import { Sheet } from '../common';
-import { importMapFile, loadCatalog, removeMap, type CatalogEntry } from '../../map/maps';
-import { activateMap } from '../../state/actions';
+import { Sheet, Switch } from '../common';
+import { importMapFile, loadCatalog, removeMap, WORLD_CODE, type CatalogEntry } from '../../map/maps';
+import { requestDownload, worldJob } from '../../state/downloads';
+import { activateMap, refreshMapSources } from '../../state/actions';
 import { pickFile } from '../../services/files';
 
 export function MapsSheet() {
   const { t } = useT();
   const patch = useApp((s) => s.patch);
   const active = usePrefs((s) => s.activeMapId);
+  const askArea = usePrefs((s) => s.askAreaPrompts);
   const [items, setItems] = useState<CatalogEntry[]>([]);
   const [busy, setBusy] = useState(false);
 
@@ -42,6 +44,7 @@ export function MapsSheet() {
       const first = (await loadCatalog())[0];
       if (first) await activate(first.id);
     }
+    await refreshMapSources();
     refresh();
   };
 
@@ -74,6 +77,20 @@ export function MapsSheet() {
               )}
             </div>
           ))}
+        </div>
+        {!items.some((m) => m.country === WORLD_CODE) && (
+          <button className="btn ghost block" onClick={() => requestDownload(worldJob())}>
+            <Icon name="globe" size={18} /> {t('world.name')} · ≈ {Math.round(worldJob().estimate / 1e6)} {t('unit.mb')}
+          </button>
+        )}
+        <div className="card source-card">
+          <div className="set-row">
+            <span>
+              <Icon name="download" size={18} /> {t('maps.ask_area')}
+            </span>
+            <Switch checked={askArea} onChange={(v) => usePrefs.getState().set({ askAreaPrompts: v })} label={t('maps.ask_area')} />
+          </div>
+          <small className="muted">{t('maps.ask_area_hint')}</small>
         </div>
         <button className="btn primary block" onClick={() => patch({ sheet: { type: 'countries' } })}>
           <Icon name="globe" size={18} /> {t('countries.choose')}

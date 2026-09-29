@@ -27,17 +27,18 @@ const server = await startPreview(join(ROOT, 'dist-demo'), PORT);
 const browser = await launch();
 await mkdir(OUT, { recursive: true });
 
-async function session({ theme, lang, onboarded = true }) {
+async function session({ theme, lang, onboarded = true, world = true }) {
   const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, locale: lang === 'ru' ? 'ru-RU' : 'en-GB', colorScheme: theme });
   const page = await ctx.newPage();
   page.on('pageerror', (e) => console.error('[pageerror]', e.message));
   await page.addInitScript(
-    ([l, ob]) =>
+    ([l, ob, wp]) =>
       localStorage.setItem(
         'tom.prefs.v1',
-        JSON.stringify({ state: { onboarded: ob, lang: l, theme: 'auto', ...(ob ? { nickname: l === 'ru' ? 'Алекс' : 'Alex', avatarIcon: 'mountain', avatarColor: '#6C8CFF' } : {}) }, version: 0 }),
+        // worldPrompted: true — вопрос про обзор мира не перекрывает остальные кадры
+        JSON.stringify({ state: { onboarded: ob, lang: l, theme: 'auto', worldPrompted: wp, ...(ob ? { nickname: l === 'ru' ? 'Алекс' : 'Alex', avatarIcon: 'mountain', avatarColor: '#6C8CFF' } : {}) }, version: 0 }),
       ),
-    [lang, onboarded],
+    [lang, onboarded, world],
   );
   await page.goto(server.url);
   await page.waitForSelector('[data-map-ready="1"]', { timeout: 60000 });
@@ -263,9 +264,29 @@ async function onboarding(lang) {
   await ctx.close();
 }
 
+// вопросы про загрузку карт: обзор мира после знакомства, область при приближении, согласие в листе страны
+async function downloadPrompts(lang) {
+  const dir = `${lang}-dark`;
+  const { ctx, page } = await session({ theme: 'dark', lang, world: false });
+  await page.waitForSelector('.download-modal', { timeout: 15000 });
+  await shot(page, dir, '33-world-prompt')();
+  await page.locator('.download-modal .btn.ghost').click(); // «Не сейчас»
+  await page.waitForTimeout(400);
+  await page.evaluate(() => { window.__map.jumpTo({ zoom: 9, center: [2.35, 48.85] }); });
+  await page.waitForSelector('.area-prompt', { timeout: 15000 });
+  await page.waitForTimeout(500);
+  await shot(page, dir, '34-area-prompt')();
+  await page.locator('.area-prompt .btn.primary').click(); // без разрешения — окно согласия
+  await page.waitForSelector('.download-modal');
+  await shot(page, dir, '35-consent')();
+  await ctx.close();
+}
+
 try {
   await onboarding('ru');
   await onboarding('en');
+  await downloadPrompts('ru');
+  await downloadPrompts('en');
   await scenes('dark', 'ru');
   await scenes('light', 'ru', ['map', 'overview', 'peek', 'quests', 'stats', 'note', 'workout', 'trips', 'mapedit']);
   // английский интерфейс — только ключевые экраны
@@ -301,6 +322,14 @@ try {
     ['ru-dark/29-clusters.png', 'Метки собираются в группы'], ['ru-dark/30-menu.png', 'Долгое нажатие: метка в любом месте'], ['ru-dark/31-fog-open.png', 'Открыть туман кругом'],
     ['ru-dark/32-fog-area.png', 'Закрыть область'],
   ], 'TravelOpenMap 0.3', 'Группировка меток · метки в любом месте · ручная правка тумана');
+  await sheet('overview-ru-5.png', [
+    ['ru-dark/33-world-prompt.png', 'После знакомства: обзор мира'], ['ru-dark/34-area-prompt.png', 'Приближение: карта области'], ['ru-dark/35-consent.png', 'Загрузка — только с вашего разрешения'],
+    ['ru-dark/27-country.png', 'Кнопка «Скачать карту» в стране'],
+  ], 'TravelOpenMap 0.5', 'Обзор мира · карты областей при приближении · согласие на загрузку');
+  await sheet('overview-en-5.png', [
+    ['en-dark/33-world-prompt.png', 'After onboarding: world overview'], ['en-dark/34-area-prompt.png', 'Zooming in: area map'], ['en-dark/35-consent.png', 'Downloads only with your consent'],
+    ['en-dark/27-country.png', 'Download button in a country'],
+  ], 'TravelOpenMap 0.5', 'World overview · area maps when zooming in · download consent');
   await sheet('overview-ru-4.png', [
     ['ru-dark/00-onboarding-look.png', 'Первый запуск: оформление'], ['ru-dark/00-onboarding-me.png', 'Знакомство: ник обязателен'], ['ru-dark/15b-theme.png', 'Тема: системная, светлая, тёмная'],
     ['ru-dark/09-profile.png', 'Профиль с ником и аватаром'],

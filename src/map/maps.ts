@@ -63,6 +63,23 @@ export async function openMap(id: string): Promise<MapInfo | null> {
   return null;
 }
 
+/** Метка страны для обзорной карты мира в каталоге. */
+export const WORLD_CODE = 'WORLD';
+
+/** Открывает все карты каталога: они рисуются вместе (мир снизу, детальные поверх). */
+export async function openAllMaps(): Promise<MapInfo[]> {
+  const out: MapInfo[] = [];
+  for (const e of await loadCatalog()) {
+    try {
+      const info = await openMap(e.id);
+      if (info) out.push(info);
+    } catch {
+      /* повреждённый файл пропускаем */
+    }
+  }
+  return out;
+}
+
 /** Импорт файла .pmtiles. Бросает Error с понятным текстом, если файл не подходит. */
 export async function importMapFile(file: File, extra: { name?: string; country?: string } = {}): Promise<OfflineMapRecord> {
   const info = await inspectPmtiles(file);

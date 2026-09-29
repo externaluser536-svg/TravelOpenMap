@@ -24,7 +24,7 @@ The world starts hidden in fog — it clears where you have been. Save places wi
 | 📊 **Statistics** | Daily charts, cumulative area, activity calendar, distributions by hour, weekday and category; 7/30/90 days or all time. |
 | 🏃 **Workouts** | Walking and running without fog: time, distance, pace, splits, elevation, calories, route, covered area (strip, loop, hull), history, GPX. |
 | ✈️ **Trip planner** | Country, cities, dates or an “idea”, statuses, packing checklist, budget by category, timeline, countdown. |
-| 🌍 **Country maps** | Country catalogue, four detail levels, size estimate. Download is optional (see [Offline & privacy](#-offline--privacy)); your own `.pmtiles` import from a file. |
+| 🌍 **Country & area maps** | After onboarding the app offers a world overview map; zooming into an area without a detailed map offers that area. Country catalogue, four detail levels, size estimate. Downloads only with your consent (see [Offline & privacy](#-offline--privacy)); your own `.pmtiles` import from a file. All installed maps are drawn together. |
 | 🛡️ **Excluded zones** | Inside a circle (home, work) fog does not clear and steps/route are not recorded. |
 | 💾 **Your data** | On-device IndexedDB, single-file backup, GPX and GeoJSON export. |
 | 👤 **Onboarding & profile** | First launch asks for a nickname (required), avatar, country, weight, language, theme, units. All editable in Settings. |
@@ -54,7 +54,7 @@ The world starts hidden in fog — it clears where you have been. Save places wi
 </tr>
 </table>
 
-Overviews: [0.2](docs/screenshots/overview-en-2.png) · [0.3](docs/screenshots/overview-en-3.png) · [0.4](docs/screenshots/overview-en-4.png). Light theme and Russian UI — in [`docs/screenshots`](docs/screenshots).
+Overviews: [0.2](docs/screenshots/overview-en-2.png) · [0.3](docs/screenshots/overview-en-3.png) · [0.4](docs/screenshots/overview-en-4.png) · [0.5](docs/screenshots/overview-en-5.png). Light theme and Russian UI — in [`docs/screenshots`](docs/screenshots).
 
 ## 🗺️ Offline maps
 
@@ -70,7 +70,7 @@ Ways to add a map ([details](docs/OFFLINE_MAPS.md)):
 ## 🔒 Offline & privacy
 
 * The main app makes no network requests: CSP allows only `self`, `blob:`, `data:`; fonts, icons and map are local; no analytics or CDN.
-* Country download is off by default. Enable *“Allow map downloads from the network”* and enter a PMTiles source URL; it runs through an isolated gateway ([`gateway.html`](gateway.html)) only while downloading.
+* Map downloads stay off until you allow them in a consent dialog (world overview after onboarding, the “Download map” button, or the card shown when zooming in). The source is the daily Protomaps build or your own URL; it runs through an isolated gateway ([`gateway.html`](gateway.html)) only while downloading.
 * Android: the `INTERNET` permission is added by default. Build without it: `node scripts/configure-native.mjs --offline-only`.
 * `npm run test:e2e` runs the production build in Chromium with DNS disabled for external hosts and checks that no request leaves the device.
 
@@ -85,7 +85,7 @@ Capacitor 8 · React 19 · TypeScript · Vite · MapLibre GL 6 · PMTiles · `@p
 ```bash
 npm install
 npm run dev          # http://localhost:5173 ; ?demo loads demo data (a route in Monaco)
-npm test             # 93 unit tests
+npm test             # 109 unit tests
 npm run test:e2e     # zero-request check
 npm run build        # dist/
 npm run release:test # test release: APK + AAB + web archive → release/
@@ -97,7 +97,7 @@ Android/iOS builds, signing, maps, troubleshooting: **[INSTALLATION.en.md](INSTA
 
 * The Android release build (APK/AAB) is built in GitHub Actions ([`release-test.yml`](.github/workflows/release-test.yml)) and published as a pre-release ([v0.4.0-test.3](https://github.com/externaluser536-svg/TravelOpenMap/releases/tag/v0.4.0-test.3)); it is signed with a public test key — for testing only. The CI build passed; installing the APK on a device was not tested.
 * Verified in Chromium (unit tests, e2e, screenshots). Native Android/iOS builds, real GPS/compass sensors, phone camera, and iOS WKWebView behaviour were not tested on devices.
-* Country download was tested against a local PMTiles server; the real Protomaps server was not. The source must support HTTP Range and CORS.
+* Map download was tested against a local PMTiles server; the real Protomaps server (including auto-picking the latest daily build) was not. The source must support HTTP Range and CORS.
 * Fog and workouts are recorded while the app is on screen; no background GPS.
 * Download size is an estimate; one download is capped at 300 MB.
 * One active map file at a time.

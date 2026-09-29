@@ -7,10 +7,10 @@ import { Sheet, Switch } from '../common';
 import { CountryPicker } from '../CountryPicker';
 import { DETAIL_PRESETS, countryByCode, countryName, type DetailId } from '../../data/countries';
 import { countTiles, estimateBytes } from '../../map/extract';
-import { MAX_DOWNLOAD_BYTES, cancelDownload, downloadsEnabled, startCountryDownload } from '../../state/downloads';
+import { MAX_DOWNLOAD_BYTES, cancelDownload, downloadsEnabled, resolveSourceUrl, startCountryDownload } from '../../state/downloads';
 import { loadCatalog, removeMap, type CatalogEntry } from '../../map/maps';
 import { probeSource } from '../../map/gateway-client';
-import { activateMap } from '../../state/actions';
+import { activateMap, refreshMapSources } from '../../state/actions';
 import { importMapFile } from '../../map/maps';
 import { pickFile } from '../../services/files';
 
@@ -56,7 +56,7 @@ export function CountrySheet({ code }: { code: string }) {
   const check = async () => {
     setProbe({ state: 'busy' });
     try {
-      const r = await probeSource(source.trim());
+      const r = await probeSource(await resolveSourceUrl());
       setProbe({ state: 'ok', text: `${r.host} · z${r.header.minZoom}–${r.header.maxZoom}${r.name ? ` · ${r.name}` : ''}` });
     } catch {
       setProbe({ state: 'err', text: t('countries.probe_fail') });
@@ -75,7 +75,7 @@ export function CountrySheet({ code }: { code: string }) {
                 <span className="mi-radio on"><Icon name="check" size={14} strokeWidth={3.2} /></span>
                 <div className="mi-main static"><span><b>{m.name}</b><small>{((m.size ?? 0) / 1e6).toFixed(1)} {t('unit.mb')}</small></span></div>
                 <button className="btn sm ghost" onClick={() => void activateMap(m.id).then(() => patch({ sheet: null, screen: 'map' }))}>{t('countries.open')}</button>
-                <button className="icon-btn danger-text" aria-label={t('common.delete')} onClick={() => void removeMap(m.id).then(refresh)}><Icon name="trash" size={18} /></button>
+                <button className="icon-btn danger-text" aria-label={t('common.delete')} onClick={() => void removeMap(m.id).then(refreshMapSources).then(refresh)}><Icon name="trash" size={18} /></button>
               </div>
             ))}
           </div>
@@ -110,10 +110,10 @@ export function CountrySheet({ code }: { code: string }) {
         ) : (
           <>
             {dl?.state === 'error' && dl.code === c.code && <div className="banner-inline err"><Icon name="triangle-alert" size={16} /><span>{dl.error}</span></div>}
-            <button className="btn primary block" disabled={!enabled} onClick={() => void startCountryDownload(c, detail)}>
-              <Icon name="download" size={18} /> {t('countries.download')}
+            <button className="btn primary block" onClick={() => startCountryDownload(c, detail)}>
+              <Icon name="download" size={18} /> {t('countries.download')} · {t(`countries.d.${detail}`)} · ≈ {fmtSize(estimateBytes(c.bbox, 0, preset.maxZoom))}
             </button>
-            {!enabled && <small className="muted">{t('countries.download_off')}</small>}
+            {!enabled && <small className="muted">{t('countries.download_consent')}</small>}
           </>
         )}
 
@@ -126,10 +126,11 @@ export function CountrySheet({ code }: { code: string }) {
           {allow && (
             <>
               <label className="field"><span>{t('countries.source')}</span>
-                <input className="input" value={source} onChange={(e) => { usePrefs.getState().set({ mapSourceUrl: e.target.value }); setProbe({ state: 'idle' }); }} placeholder="https://build.protomaps.com/YYYYMMDD.pmtiles" inputMode="url" autoCapitalize="off" spellCheck={false} />
+                <input className="input" value={source} onChange={(e) => { usePrefs.getState().set({ mapSourceUrl: e.target.value, resolvedSource: null }); setProbe({ state: 'idle' }); }} placeholder="https://…/planet.pmtiles" inputMode="url" autoCapitalize="off" spellCheck={false} />
               </label>
+              <small className="muted">{t('countries.source_auto')}</small>
               <div className="row-btns">
-                <button className="btn ghost sm" disabled={!/^https?:\/\//i.test(source.trim()) || probe.state === 'busy'} onClick={() => void check()}>
+                <button className="btn ghost sm" disabled={(!!source.trim() && !/^https?:\/\//i.test(source.trim())) || probe.state === 'busy'} onClick={() => void check()}>
                   {probe.state === 'busy' ? <span className="spinner" /> : <Icon name="refresh" size={14} />} {t('countries.probe')}
                 </button>
                 {probe.text && <small className={probe.state === 'ok' ? 'ok-text' : 'warn-text'}>{probe.text}</small>}
