@@ -12,23 +12,16 @@
  *
  *   npm run test:online
  */
-import { execFileSync } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { launch } from './lib/browser.mjs';
 import { run, startPreview } from './lib/server.mjs';
+import { ALLOWED_HOSTS, ensureMockTiles, mockOnline } from './lib/mock-online.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const PORT = 4176;
-const MOCK = join(tmpdir(), 'tom-mock-omt');
-const DEMDIR = join(tmpdir(), 'tom-dem-cache');
-mkdirSync(DEMDIR, { recursive: true });
 if (!process.argv.includes('--no-build')) await run('npm', ['run', 'build:demo'], { cwd: ROOT });
-if (!existsSync(join(MOCK, '0'))) {
-  execFileSync('python3', [join(ROOT, 'scripts/mock/gen-omt.py'), MOCK], { stdio: 'inherit' });
-}
+ensureMockTiles();
 
 let failed = 0;
 const check = (ok, msg, extra = '') => {
@@ -40,15 +33,12 @@ const skip = (msg) => console.log(`⏭️  ${msg}`);
 const server = await startPreview(join(ROOT, 'dist-demo'), PORT);
 const origin = new URL(server.url).origin;
 const browser = await launch();
-const ALLOWED = ['tiles.openfreemap.org', 'elevation-tiles-prod.s3.amazonaws.com'];
-const CORS = { 'access-control-allow-origin': '*' };
+const ALLOWED = ALLOWED_HOSTS;
 
 try {
   const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, locale: 'ru-RU', colorScheme: 'dark' });
   const hosts = new Map();
   const seen = [];
-  const counts = { omt: 0, dem: 0 };
-  let demOk = true;
   ctx.on('request', (r) => {
     const u = new URL(r.url());
     if (u.origin !== origin && u.protocol.startsWith('http')) {
@@ -56,31 +46,7 @@ try {
       seen.push(u.host);
     }
   });
-  await ctx.route('https://tiles.openfreemap.org/**', async (route) => {
-    const u = new URL(route.request().url());
-    if (u.pathname === '/planet') {
-      return route.fulfill({ status: 200, contentType: 'application/json', headers: CORS, body: JSON.stringify({ tiles: ['https://tiles.openfreemap.org/planet/mock/{z}/{x}/{y}.pbf'] }) });
-    }
-    const m = /\/mock\/(\d+)\/(\d+)\/(\d+)\.pbf$/.exec(u.pathname);
-    const f = m && join(MOCK, m[1], m[2], `${m[3]}.pbf`);
-    counts.omt++;
-    if (f && existsSync(f)) return route.fulfill({ status: 200, contentType: 'application/x-protobuf', headers: CORS, body: readFileSync(f) });
-    return route.fulfill({ status: 404, headers: CORS, body: '' });
-  });
-  await ctx.route('https://elevation-tiles-prod.s3.amazonaws.com/**', async (route) => {
-    const url = route.request().url();
-    const f = join(DEMDIR, url.split('/terrarium/')[1].replace(/\//g, '_'));
-    if (!existsSync(f)) {
-      try {
-        writeFileSync(f, execFileSync('curl', ['-s', '--max-time', '25', '-f', url], { maxBuffer: 20e6 }));
-      } catch {
-        demOk = false;
-        return route.fulfill({ status: 404, headers: CORS, body: '' });
-      }
-    }
-    counts.dem++;
-    return route.fulfill({ status: 200, contentType: 'image/png', headers: CORS, body: readFileSync(f) });
-  });
+  const counts = await mockOnline(ctx);
   const page = await ctx.newPage();
   page.on('pageerror', (e) => console.error('[pageerror]', e.message));
   await page.addInitScript(() =>
@@ -124,7 +90,7 @@ try {
   await page.locator('.layer-row .switch').nth(2).click(); // высоты
   await page.locator('.sheet .icon-btn[aria-label="close"]').click();
   await page.waitForTimeout(7000);
-  if (!demOk && counts.dem === 0) {
+  if (!counts.demOk && counts.dem === 0) {
     skip('слой «Высоты»: рельеф недоступен из этой среды — шаг пропущен');
   } else {
     const contours = await page.evaluate(() => window.__map.queryRenderedFeatures({ layers: ['contour'] }).length);

@@ -3867,10 +3867,11 @@ select.input {
   color: var(--c);
   background: color-mix(in srgb, var(--c) 16%, transparent);
 }
-.layer-text {
+.layer-row > .layer-text {
   flex: 1;
   min-width: 0;
   display: grid;
+  justify-items: start;
   gap: 2px;
   text-align: left;
 }
@@ -3880,4 +3881,88 @@ select.input {
 .grid-gap {
   display: grid;
   gap: 10px;
+}
+
+/* ───────────────────────── обучение ───────────────────────── */
+.tour {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  touch-action: none;
+}
+.tour-mask {
+  position: absolute;
+  inset: 0;
+}
+.tour-ring {
+  position: absolute;
+  border: 2px solid var(--accent);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 30%, transparent), 0 0 28px color-mix(in srgb, var(--accent) 60%, transparent);
+  animation: tour-pulse 1.6s ease-in-out infinite;
+  pointer-events: none;
+}
+@keyframes tour-pulse {
+  50% {
+    box-shadow: 0 0 0 9px color-mix(in srgb, var(--accent) 12%, transparent), 0 0 38px color-mix(in srgb, var(--accent) 70%, transparent);
+  }
+}
+.tour-card {
+  background: var(--surface-solid);
+  position: absolute;
+  left: 14px;
+  right: 14px;
+  max-width: 420px;
+  margin: 0 auto;
+  padding: 16px 18px 16px;
+  border-radius: 24px;
+  display: grid;
+  gap: 8px;
+  animation: rise 0.3s ease-out;
+}
+.tour-card h3 {
+  margin: 0;
+  font-size: 18px;
+}
+.tour-card p {
+  margin: 0;
+  font-size: 14.5px;
+  line-height: 1.45;
+  color: var(--text);
+}
+.tour-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.tour-count {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--muted);
+  letter-spacing: 0.04em;
+}
+.tour-skip {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--muted);
+  padding: 4px 2px;
+}
+.tour-dots {
+  display: flex;
+  gap: 5px;
+  justify-content: center;
+  padding: 2px 0;
+}
+.tour-dots i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--text) 22%, transparent);
+}
+.tour-dots i.done {
+  background: color-mix(in srgb, var(--accent) 55%, transparent);
+}
+.tour-dots i.on {
+  width: 18px;
+  border-radius: 4px;
+  background: var(--accent);
 }

@@ -22,7 +22,7 @@ export function TabBar() {
     patch({ screen: id });
   };
   const item = (tab: (typeof TABS)[number]) => (
-    <button key={tab.id} className={`tab ${screen === tab.id ? 'on' : ''}`} onClick={() => go(tab.id)} aria-label={t(tab.label)}>
+    <button key={tab.id} className={`tab ${screen === tab.id ? 'on' : ''}`} onClick={() => go(tab.id)} aria-label={t(tab.label)} data-tour={`tab-${tab.id}`}>
       <Icon name={tab.icon} size={22} strokeWidth={screen === tab.id ? 2.4 : 2} />
       <span>{t(tab.label)}</span>
     </button>
@@ -31,7 +31,7 @@ export function TabBar() {
     <nav className="tabbar glass">
       {item(TABS[0])}
       {item(TABS[1])}
-      <button className="tab-add" onClick={startNote} aria-label={t('note.add')}>
+      <button className="tab-add" onClick={startNote} aria-label={t('note.add')} data-tour="add">
         <Icon name="plus" size={28} strokeWidth={2.6} />
       </button>
       {item(TABS[2])}

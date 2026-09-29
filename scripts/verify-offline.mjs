@@ -231,6 +231,41 @@ try {
   check(st2.onlinePrompted === true && st2.onlineMaps !== true, 'после отказа вопрос не повторяется, онлайн-карта остаётся выключенной');
   check(req2.filter((u) => !u.startsWith(origin) && !u.startsWith('blob:') && !u.startsWith('data:')).length === 0, 'после отказа внешних запросов по-прежнему нет');
   await ctx2.close();
+
+  // 7) обучение: после знакомства предлагается, можно принять или отказаться; вопрос про карты ждёт своей очереди
+  const tourCtx = async (accept) => {
+    const c = await browser.newContext({ viewport: { width: 390, height: 844 }, locale: 'ru-RU' });
+    const pg = await c.newPage();
+    await pg.addInitScript(() => localStorage.setItem('tom.prefs.v1', JSON.stringify({ state: { onboarded: true, lang: 'ru', theme: 'dark', nickname: 'Тест' }, version: 0 })));
+    await pg.goto(server.url);
+    await pg.waitForSelector('.tour-offer', { timeout: 20000 });
+    const prefs = () => pg.evaluate(() => JSON.parse(localStorage.getItem('tom.prefs.v1')).state);
+    check((await pg.locator('.download-modal').count()) === 1, 'после знакомства сначала предлагается обучение, вопрос про карты не мешает');
+    if (accept) {
+      await pg.locator('.tour-offer .btn.primary').click();
+      await pg.waitForSelector('.tour-card');
+      let steps = 0;
+      let rings = 0;
+      for (let i = 0; i < 30 && (await pg.locator('.tour').count()); i++) {
+        steps++;
+        if (await pg.locator('.tour-ring').count()) rings++;
+        await pg.locator('.tour-card .btn.primary').click();
+        await pg.waitForTimeout(350);
+      }
+      check(steps === 13 && rings >= 9, 'обучение проходит все шаги, элементы подсвечиваются', `шагов ${steps}, с подсветкой ${rings}`);
+    } else {
+      await pg.locator('.tour-offer .btn.ghost').click();
+      await pg.waitForTimeout(400);
+      check((await pg.locator('.tour').count()) === 0, 'отказ от обучения ничего не запускает');
+    }
+    const st = await prefs();
+    check(st.tutorialSeen === true, accept ? 'после обучения оно больше не предлагается' : 'после отказа обучение больше не предлагается');
+    await pg.waitForSelector('.download-modal', { timeout: 15000 });
+    check(true, 'следом показывается вопрос про онлайн-карту');
+    await c.close();
+  };
+  await tourCtx(true);
+  await tourCtx(false);
 } finally {
   await browser.close();
   server.stop();

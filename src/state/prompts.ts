@@ -15,6 +15,38 @@ const ONLINE_DELAY_MS = 1500;
 const shownThisSession = new Set<string>();
 let areaTimer = 0;
 let onlineTimer = 0;
+let tourTimer = 0;
+
+const TOUR_DELAY_MS = 1200;
+
+/** Первое знакомство закончилось — предлагаем короткое обучение (можно отказаться). */
+function checkTour(): void {
+  const prefs = usePrefs.getState();
+  const app = useApp.getState();
+  if (prefs.tutorialSeen || tourTimer || app.tourOffer || app.tour) return;
+  const ready = () => {
+    const a = useApp.getState();
+    const p = usePrefs.getState();
+    return (
+      p.onboarded &&
+      checkNickname(p.nickname) === 'ok' &&
+      !p.tutorialSeen &&
+      a.screen === 'map' &&
+      !!a.mapInfo &&
+      a.mode === 'normal' &&
+      !a.sheet &&
+      !a.levelUp &&
+      !a.tour &&
+      a.workoutLive === null &&
+      !a.downloadPrompt
+    );
+  };
+  if (!ready()) return;
+  tourTimer = window.setTimeout(() => {
+    tourTimer = 0;
+    if (ready()) useApp.getState().patch({ tourOffer: true });
+  }, TOUR_DELAY_MS);
+}
 
 /** Можно ли сейчас показывать вопросы: знакомство и обучение пройдены, открыта карта, ничего другого не мешает. */
 function idle(): boolean {
@@ -30,6 +62,7 @@ function idle(): boolean {
     !app.sheet &&
     !app.levelUp &&
     !app.tour &&
+    !app.tourOffer &&
     app.workoutLive === null &&
     app.download?.state !== 'running'
   );
@@ -50,13 +83,18 @@ function checkOnline(): void {
 
 /** Запускается один раз: следит за состоянием и вовремя показывает вопрос про онлайн-карту. */
 export function startPromptWatchers(): () => void {
-  const offApp = useApp.subscribe(checkOnline);
-  const offPrefs = usePrefs.subscribe(checkOnline);
-  checkOnline();
+  const check = () => {
+    checkTour();
+    checkOnline();
+  };
+  const offApp = useApp.subscribe(check);
+  const offPrefs = usePrefs.subscribe(check);
+  check();
   return () => {
     offApp();
     offPrefs();
     clearTimeout(onlineTimer);
+    clearTimeout(tourTimer);
     clearTimeout(areaTimer);
   };
 }

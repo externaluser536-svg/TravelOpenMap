@@ -195,6 +195,8 @@ export interface AppState {
   downloadPrompt: DownloadPrompt | null;
   /** интерактивное обучение: номер шага или null, если не идёт */
   tour: { step: number } | null;
+  /** показано окно «пройти обучение?» */
+  tourOffer: boolean;
   canUndoFog: boolean;
   canRedoFog: boolean;
   mapMenu: MapMenu | null;
@@ -260,6 +262,7 @@ export const useApp = create<AppState>((set, get) => ({
   fogDraft: null,
   downloadPrompt: null,
   tour: null,
+  tourOffer: false,
   canUndoFog: false,
   canRedoFog: false,
   mapMenu: null,

@@ -14,7 +14,7 @@ The world starts hidden in fog — it clears where you have been. Save places wi
 |---|---|
 | 🌫️ **Fog of war** | Clears by GPS, reveal radius 30–150 m, soft glowing edges. |
 | 💨 **Wind** | Fog clouds drift and gust; speed is adjustable or off. |
-| ✏️ **Fog editor** | Reveal or cover a circle or a freehand area manually — for places you visited before installing the app. Undo the last edit. |
+| ✏️ **Fog editor** | Brush: drag a finger and the fog under your stroke clears or returns at once. Circle and freehand area tools too; pick a brush size, use two fingers to pan and zoom. Multi-step undo and redo. For places you visited before installing the app. |
 | 👁️ **Peek mode** | One toggle; your walked route is drawn over the map. |
 | 📍 **Pins anywhere** | Long-press (or right-click) the map → menu: add a pin, reveal/cover fog, measure from here. Photos, videos, description, 9 categories. |
 | 🔢 **Pin clusters** | Zoomed out, nearby pins merge into a bubble with a count and a category ring; tap to zoom in. Pins sharing one spot open as a list. |
@@ -24,7 +24,11 @@ The world starts hidden in fog — it clears where you have been. Save places wi
 | 📊 **Statistics** | Daily charts, cumulative area, activity calendar, distributions by hour, weekday and category; 7/30/90 days or all time. |
 | 🏃 **Workouts** | Walking and running without fog: time, distance, pace, splits, elevation, calories, route, covered area (strip, loop, hull), history, GPX. |
 | ✈️ **Trip planner** | Country, cities, dates or an “idea”, statuses, packing checklist, budget by category, timeline, countdown. |
-| 🌍 **Country & area maps** | After onboarding the app offers a world overview map; zooming into an area without a detailed map offers that area. Country catalogue, four detail levels, size estimate. Downloads only with your consent (see [Offline & privacy](#-offline--privacy)); your own `.pmtiles` import from a file. All installed maps are drawn together. |
+| 🗺️ **Online map** | [OpenFreeMap](https://openfreemap.org) tiles load by themselves as you browse and are cached on the device. Switched on only with your consent (see [Offline & privacy](#-offline--privacy)). |
+| 🚇 **Map layers** | Subway, Outdoors (trails, cycle routes, peaks, campsites), Elevation (labelled contour lines and relief shading). |
+| 📥 **Maps for offline** | Save a country or an area with a chosen detail level and a size estimate; zooming into an unfamiliar area offers to save it. Your own `.pmtiles` import from a file. |
+| 🛰️ **Background tracking** | Android: a notification-backed service records your route while the app is minimised, without Google Play services; the trail is redrawn in order when you return. |
+| 🎓 **Tutorial** | After onboarding a short interface tour is offered; skip it and replay later from Settings. |
 | 🛡️ **Excluded zones** | Inside a circle (home, work) fog does not clear and steps/route are not recorded. |
 | 💾 **Your data** | On-device IndexedDB, single-file backup, GPX and GeoJSON export. |
 | 👤 **Onboarding & profile** | First launch asks for a nickname (required), avatar, country, weight, language, theme, units. All editable in Settings. |
@@ -37,7 +41,7 @@ The world starts hidden in fog — it clears where you have been. Save places wi
 <tr>
 <td><img src="docs/screenshots/en-dark/29-clusters.png" width="230"><br><sub>Pin clusters with counts</sub></td>
 <td><img src="docs/screenshots/en-dark/30-menu.png" width="230"><br><sub>Long-press menu</sub></td>
-<td><img src="docs/screenshots/en-dark/31-fog-open.png" width="230"><br><sub>Fog editor: circle</sub></td>
+<td><img src="docs/screenshots/en-dark/31-fog-open.png" width="230"><br><sub>Fog brush</sub></td>
 <td><img src="docs/screenshots/en-dark/32-fog-area.png" width="230"><br><sub>Fog editor: area</sub></td>
 </tr>
 <tr>
@@ -52,41 +56,51 @@ The world starts hidden in fog — it clears where you have been. Save places wi
 <td><img src="docs/screenshots/en-dark/21-workout-detail.png" width="230"><br><sub>Workout summary</sub></td>
 <td><img src="docs/screenshots/en-dark/14-privacy.png" width="230"><br><sub>0 external requests</sub></td>
 </tr>
+<tr>
+<td><img src="docs/screenshots/en-dark/40-online-map.png" width="230"><br><sub>Online map with layers</sub></td>
+<td><img src="docs/screenshots/en-dark/41-layers.png" width="230"><br><sub>Map layers</sub></td>
+<td><img src="docs/screenshots/en-dark/36-tour-offer.png" width="230"><br><sub>Tutorial offer</sub></td>
+<td><img src="docs/screenshots/en-dark/37-tour-fogedit.png" width="230"><br><sub>Tutorial hint</sub></td>
+</tr>
+<tr>
+<td><img src="docs/screenshots/en-dark/33-online-prompt.png" width="230"><br><sub>Online map consent</sub></td>
+<td><img src="docs/screenshots/en-dark/34-area-prompt.png" width="230"><br><sub>Save an area</sub></td>
+<td><img src="docs/screenshots/en-dark/42-maps.png" width="230"><br><sub>Saved areas and cache</sub></td>
+<td><img src="docs/screenshots/app-icon.png" width="150"><br><sub>App icon</sub></td>
+</tr>
 </table>
 
-Overviews: [0.2](docs/screenshots/overview-en-2.png) · [0.3](docs/screenshots/overview-en-3.png) · [0.4](docs/screenshots/overview-en-4.png) · [0.5](docs/screenshots/overview-en-5.png). Light theme and Russian UI — in [`docs/screenshots`](docs/screenshots).
+Overviews: [0.2](docs/screenshots/overview-en-2.png) · [0.3](docs/screenshots/overview-en-3.png) · [0.4](docs/screenshots/overview-en-4.png) · [0.5](docs/screenshots/overview-en-5.png) · [0.6](docs/screenshots/overview-en-6.png) · [0.6, online mode](docs/screenshots/overview-en-6b.png). Light theme and Russian UI — in [`docs/screenshots`](docs/screenshots).
 
-## 🗺️ Offline maps
+## 🗺️ Maps
 
-The map is OpenStreetMap vector tiles in a [PMTiles](https://docs.protomaps.com/pmtiles/) file ([Protomaps Basemaps](https://docs.protomaps.com/basemaps/layers) schema), read by MapLibre straight from the device. A Monaco map is bundled; everything else is added per region.
-
-Ways to add a map ([details](docs/OFFLINE_MAPS.md)):
-
-1. **In the app:** *Profile → Offline maps → Add country* (download) or *Import .pmtiles* (file).
-2. **`pmtiles extract`** — cut an area from a Protomaps build.
-3. **[`tools/osm2pmtiles.py`](tools/osm2pmtiles.py)** — local `.osm.pbf` → `.pmtiles` converter (tested on Monaco, Andorra, Utrecht).
-4. **Planetiler** — countries and continents.
+* **Online map.** OpenStreetMap vector tiles from [OpenFreeMap](https://openfreemap.org) (OpenMapTiles schema); MapLibre requests them as you browse and every tile is cached on the device (up to 500 MB, adjustable).
+* **Layers.** Subway, Outdoors and Elevation are switched on with the layers button on the map. Relief comes from [AWS Terrain Tiles](https://registry.opendata.aws/terrain-tiles/); contours and shading are built on the device.
+* **For offline.** *Profile → Offline maps → Pick a country* → detail level → “Save for offline”; the area's tiles are pinned in the cache. Without a connection the map is drawn from the cache.
+* **Bundled and custom maps.** A Monaco map in [PMTiles](https://docs.protomaps.com/pmtiles/) format ships with the app; import your own `.pmtiles` from a file ([details](docs/OFFLINE_MAPS.md)).
+* Sources and what is taken from each — [docs/MAP_SOURCES.md](docs/MAP_SOURCES.md) (Russian).
 
 ## 🔒 Offline & privacy
 
-* The main app makes no network requests: CSP allows only `self`, `blob:`, `data:`; fonts, icons and map are local; no analytics or CDN.
-* Map downloads stay off until you allow them in a consent dialog (world overview after onboarding, the “Download map” button, or the card shown when zooming in). The source is the daily Protomaps build or your own URL; it runs through an isolated gateway ([`gateway.html`](gateway.html)) only while downloading.
+* Until you allow the online map the app makes no network requests: CSP allows `self`, `blob:`, `data:` and two map hosts — `tiles.openfreemap.org` and `elevation-tiles-prod.s3.amazonaws.com`; fonts, icons and the bundled map are local; no analytics.
+* The online map is switched on in the consent dialog after onboarding or in *Profile → Offline maps*. The servers receive tile numbers (the approximate place you are viewing) and ordinary HTTP headers; notes, route and fog stay on the device.
+* Background tracking stays off until you switch it on; track data never leaves the device.
 * Android: the `INTERNET` permission is added by default. Build without it: `node scripts/configure-native.mjs --offline-only`.
-* `npm run test:e2e` runs the production build in Chromium with DNS disabled for external hosts and checks that no request leaves the device.
+* `npm run test:e2e` checks the production build in Chromium: without consent no request leaves the device, after consent only the two map hosts are contacted.
 
 *Profile → Privacy* shows the counters in-app.
 
 ## 🧱 Stack
 
-Capacitor 8 · React 19 · TypeScript · Vite · MapLibre GL 6 · PMTiles · `@protomaps/basemaps` · supercluster · IndexedDB (`idb`) · Zustand · Vitest · Playwright. Architecture: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+Capacitor 8 · React 19 · TypeScript · Vite · MapLibre GL 6 · OpenFreeMap (OpenMapTiles) · maplibre-contour · PMTiles · `@protomaps/basemaps` · supercluster · IndexedDB (`idb`) · Zustand · Vitest · Playwright. Architecture: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 ## 🚀 Quick start
 
 ```bash
 npm install
 npm run dev          # http://localhost:5173 ; ?demo loads demo data (a route in Monaco)
-npm test             # 109 unit tests
-npm run test:e2e     # zero-request check
+npm test             # unit tests
+npm run test:e2e     # zero-request check, fog brush, tutorial, online mode on mocked servers
 npm run build        # dist/
 npm run release:test # test release: APK + AAB + web archive → release/
 ```
@@ -95,14 +109,13 @@ Android/iOS builds, signing, maps, troubleshooting: **[INSTALLATION.en.md](INSTA
 
 ## ⚠️ Limitations
 
-* The Android release build (APK/AAB) is built in GitHub Actions ([`release-test.yml`](.github/workflows/release-test.yml)) and published as a pre-release ([v0.4.0-test.3](https://github.com/externaluser536-svg/TravelOpenMap/releases/tag/v0.4.0-test.3)); it is signed with a public test key — for testing only. The CI build passed; installing the APK on a device was not tested.
-* Verified in Chromium (unit tests, e2e, screenshots). Native Android/iOS builds, real GPS/compass sensors, phone camera, and iOS WKWebView behaviour were not tested on devices.
-* Map download was tested against a local PMTiles server; the real Protomaps server (including auto-picking the latest daily build) was not. The source must support HTTP Range and CORS.
-* Fog and workouts are recorded while the app is on screen; no background GPS.
-* Download size is an estimate; one download is capped at 300 MB.
-* One active map file at a time.
+* The Android release build (APK/AAB) is built in GitHub Actions ([`release-test.yml`](.github/workflows/release-test.yml)) and published as a pre-release; it is signed with a public test key — for testing only. The CI build, including the background tracking service, passes; installing the APK on a device was not tested.
+* Verified in Chromium (unit tests, e2e, screenshots). Native builds on devices, real GPS/compass sensors, phone camera, the background service on a real phone and iOS WKWebView behaviour were not tested.
+* Online mode was tested against mocked servers (a tiny OpenMapTiles tile set plus real relief tiles when reachable). The real OpenFreeMap is unreachable from the development environment: response format, CORS, rate limits and layer data coverage were not verified.
+* Background tracking is Android only; on iOS and the web fog and workouts are recorded while the app is on screen.
+* An offline area is capped at 80,000 tiles, zoom up to 14 (relief up to 12); size is an estimate.
 * Map fonts: Latin, Cyrillic, Greek.
 
 ## 📄 Licenses
 
-Code — MIT. Map data © OpenStreetMap contributors ([ODbL](https://www.openstreetmap.org/copyright)). Noto Sans — SIL OFL 1.1; sprites — [protomaps/basemaps-assets](https://github.com/protomaps/basemaps-assets). Monaco demo map — from Project-OSRM test data.
+Code — MIT. Map data © OpenStreetMap contributors ([ODbL](https://www.openstreetmap.org/copyright)); tiles — [OpenFreeMap](https://openfreemap.org) and © [OpenMapTiles](https://openmaptiles.org); relief — [Terrain Tiles](https://github.com/tilezen/joerd/blob/master/docs/attribution.md). Noto Sans — SIL OFL 1.1; sprites — [protomaps/basemaps-assets](https://github.com/protomaps/basemaps-assets). Monaco demo map — from Project-OSRM test data.

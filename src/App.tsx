@@ -33,6 +33,7 @@ import { startLocation } from './services/location';
 import { startCompass } from './services/compass';
 import { cancelMode } from './state/actions';
 import { DownloadPrompts } from './ui/DownloadPrompts';
+import { TourOffer, TourOverlay } from './ui/Tour';
 import { startPromptWatchers } from './state/prompts';
 
 export default function App() {
@@ -130,6 +131,8 @@ export default function App() {
       <LevelUp />
       <Onboarding />
       {mapInfo && <DownloadPrompts />}
+      <TourOffer />
+      <TourOverlay />
     </div>
   );
 }

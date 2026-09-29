@@ -16,6 +16,7 @@ import { fileURLToPath } from 'node:url';
 import { launch } from './lib/browser.mjs';
 import { run, startPreview } from './lib/server.mjs';
 import { optimizeDir } from './lib/optimize.mjs';
+import { mockOnline } from './lib/mock-online.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const OUT = join(ROOT, 'docs', 'screenshots');
@@ -27,18 +28,19 @@ const server = await startPreview(join(ROOT, 'dist-demo'), PORT);
 const browser = await launch();
 await mkdir(OUT, { recursive: true });
 
-async function session({ theme, lang, onboarded = true, world = true }) {
+async function session({ theme, lang, onboarded = true, prompted = true, tutorial = true, prefs = {}, mock = false }) {
   const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, locale: lang === 'ru' ? 'ru-RU' : 'en-GB', colorScheme: theme });
+  if (mock) await mockOnline(ctx);
   const page = await ctx.newPage();
   page.on('pageerror', (e) => console.error('[pageerror]', e.message));
   await page.addInitScript(
-    ([l, ob, wp]) =>
+    ([l, ob, pr, tu, extra]) =>
       localStorage.setItem(
         'tom.prefs.v1',
-        // worldPrompted: true — вопрос про обзор мира не перекрывает остальные кадры
-        JSON.stringify({ state: { onboarded: ob, lang: l, theme: 'auto', worldPrompted: wp, ...(ob ? { nickname: l === 'ru' ? 'Алекс' : 'Alex', avatarIcon: 'mountain', avatarColor: '#6C8CFF' } : {}) }, version: 0 }),
+        // onlinePrompted / tutorialSeen: true — вопросы и обучение не перекрывают остальные кадры
+        JSON.stringify({ state: { onboarded: ob, lang: l, theme: 'auto', onlinePrompted: pr, tutorialSeen: tu, ...(ob ? { nickname: l === 'ru' ? 'Алекс' : 'Alex', avatarIcon: 'mountain', avatarColor: '#6C8CFF' } : {}), ...extra }, version: 0 }),
       ),
-    [lang, onboarded, world],
+    [lang, onboarded, prompted, tutorial, prefs],
   );
   await page.goto(server.url);
   await page.waitForSelector('[data-map-ready="1"]', { timeout: 60000 });
@@ -231,12 +233,15 @@ async function scenes(theme, lang, which) {
     await page.mouse.move(120, 300); await page.mouse.down(); await page.waitForTimeout(800); await page.mouse.up();
     await s('30-menu');
     await click(page, '.mm-item', 1); await page.waitForTimeout(1800);
+    // кисть: мазок ещё «в руке» — видно предпросмотр
+    await page.mouse.move(60, 300); await page.mouse.down(); await page.mouse.move(330, 320, { steps: 14 }); await page.mouse.move(300, 380, { steps: 8 });
     await s('31-fog-open');
-    await click(page, '.fog-panel .fp-segs .seg:nth-child(1) button', 1);
-    await click(page, '.fog-panel .fp-segs .seg:nth-child(2) button', 1);
+    await page.mouse.up(); await page.waitForTimeout(500);
+    await click(page, '.fp-act.is-close');
+    await click(page, '.fp-tool', 2);
     for (const [x, y] of [[60, 150], [330, 130], [340, 330], [90, 340]]) { await page.mouse.click(x, y); await page.waitForTimeout(150); }
     await s('32-fog-area');
-    await click(page, '.fog-panel .icon-btn');
+    await click(page, '.fog-panel .mp-actions .btn', 3);
   }
   if (want('levelup')) {
     await tab(page, 'map');
@@ -264,33 +269,72 @@ async function onboarding(lang) {
   await ctx.close();
 }
 
-// вопросы про загрузку карт: обзор мира после знакомства, область при приближении, согласие в листе страны
-async function downloadPrompts(lang) {
+// первый запуск после знакомства: предложение обучения (принять/отказаться), затем вопрос про онлайн-карту
+async function firstRun(lang) {
   const dir = `${lang}-dark`;
-  const { ctx, page } = await session({ theme: 'dark', lang, world: false });
+  const { ctx, page } = await session({ theme: 'dark', lang, prompted: false, tutorial: false });
+  await page.waitForSelector('.tour-offer', { timeout: 15000 });
+  await shot(page, dir, '36-tour-offer')();
+  await page.locator('.tour-offer .btn.primary').click();
+  await page.waitForSelector('.tour-card');
+  for (let i = 0; i < 4; i++) { await page.locator('.tour-card .btn.primary').click(); await page.waitForTimeout(350); }
+  await shot(page, dir, '37-tour-fogedit')();
+  await page.locator('.tour-card .btn.primary').click();
+  await shot(page, dir, '38-tour-layers')();
+  await page.locator('.tour-skip').click();
   await page.waitForSelector('.download-modal', { timeout: 15000 });
-  await shot(page, dir, '33-world-prompt')();
-  await page.locator('.download-modal .btn.ghost').click(); // «Не сейчас»
-  await page.waitForTimeout(400);
-  await page.evaluate(() => { window.__map.jumpTo({ zoom: 9, center: [2.35, 48.85] }); });
-  await page.waitForSelector('.area-prompt', { timeout: 15000 });
-  await page.waitForTimeout(500);
-  await shot(page, dir, '34-area-prompt')();
-  await page.locator('.area-prompt .btn.primary').click(); // без разрешения — окно согласия
-  await page.waitForSelector('.download-modal');
-  await shot(page, dir, '35-consent')();
+  await shot(page, dir, '33-online-prompt')();
   await ctx.close();
 }
 
+// онлайн-карта (серверы подменены тайлами-заглушками): слои, лист слоёв, область при приближении, согласие
+async function onlineScenes(lang) {
+  const dir = `${lang}-dark`;
+  const layers = { subway: true, outdoors: true, elevation: true };
+  const { ctx, page } = await session({ theme: 'dark', lang, mock: true, prefs: { onlineMaps: true, mapLayers: layers, askAreaPrompts: true, savedAreas: [{ id: 'MC:city', name: lang === 'ru' ? 'Монако' : 'Monaco', flag: '🇲🇨', bbox: [7.4, 43.72, 7.44, 43.76], maxZoom: 13, dem: true, at: Date.now(), tiles: 1280, bytes: 18e6 }] } });
+  await page.evaluate(() => { window.__map.jumpTo({ center: [7.4205, 43.7425], zoom: 15.3, bearing: 0 }); window.__fog.setPeek(true); });
+  await page.waitForTimeout(7000);
+  await shot(page, dir, '40-online-map')();
+  await click(page, '.fab[data-tour="layers"]');
+  await page.waitForSelector('.layer-row');
+  await shot(page, dir, '41-layers')();
+  await closeSheet(page);
+  await tab(page, 'profile'); await page.waitForTimeout(400);
+  await scrollPage(page, 99999);
+  await click(page, '.card.list .row', 1); await page.waitForTimeout(800);
+  await shot(page, dir, '42-maps')();
+  await closeSheet(page);
+  await tab(page, 'map');
+  await page.evaluate(() => { window.__fog.setPeek(false); window.__map.jumpTo({ zoom: 9, center: [2.35, 48.85] }); });
+  await page.waitForSelector('.area-prompt', { timeout: 15000 });
+  await page.waitForTimeout(500);
+  await shot(page, dir, '34-area-prompt')();
+  await ctx.close();
+  // согласие перед сохранением: онлайн-режим ещё выключен
+  const off = await session({ theme: 'dark', lang });
+  await off.page.evaluate(() => window.__tom.useApp.getState().patch({ downloadPrompt: { kind: 'consent', job: { id: 'FR:city', name: 'France', bbox: [-5, 42, 8, 51], maxZoom: 11, dem: false, estimate: 240e6, fly: { lng: 2.35, lat: 46.6, zoom: 5 } } } }));
+  await off.page.waitForSelector('.download-modal');
+  await shot(off.page, dir, '35-consent')();
+  await off.ctx.close();
+}
+
 try {
-  await onboarding('ru');
-  await onboarding('en');
-  await downloadPrompts('ru');
-  await downloadPrompts('en');
-  await scenes('dark', 'ru');
-  await scenes('light', 'ru', ['map', 'overview', 'peek', 'quests', 'stats', 'note', 'workout', 'trips', 'mapedit']);
-  // английский интерфейс — только ключевые экраны
-  await scenes('dark', 'en', ['map', 'quests', 'stats', 'note', 'privacy', 'settings', 'workout', 'trips', 'countries', 'mapedit']);
+  if (args.has('--only-online')) {
+    // быстрый пересъём только онлайн-кадров
+    await onlineScenes('ru');
+    await onlineScenes('en');
+  } else {
+    await onboarding('ru');
+    await onboarding('en');
+    await firstRun('ru');
+    await firstRun('en');
+    await onlineScenes('ru');
+    await onlineScenes('en');
+    await scenes('dark', 'ru');
+    await scenes('light', 'ru', ['map', 'overview', 'peek', 'quests', 'stats', 'note', 'workout', 'trips', 'mapedit']);
+    // английский интерфейс — только ключевые экраны
+    await scenes('dark', 'en', ['map', 'quests', 'stats', 'note', 'privacy', 'settings', 'workout', 'trips', 'countries', 'mapedit']);
+  }
 
   // ---- обзор с рамками устройств
   const img = async (p) => `data:image/png;base64,${(await readFile(join(OUT, p))).toString('base64')}`;
@@ -322,14 +366,22 @@ try {
     ['ru-dark/29-clusters.png', 'Метки собираются в группы'], ['ru-dark/30-menu.png', 'Долгое нажатие: метка в любом месте'], ['ru-dark/31-fog-open.png', 'Открыть туман кругом'],
     ['ru-dark/32-fog-area.png', 'Закрыть область'],
   ], 'TravelOpenMap 0.3', 'Группировка меток · метки в любом месте · ручная правка тумана');
-  await sheet('overview-ru-5.png', [
-    ['ru-dark/33-world-prompt.png', 'После знакомства: обзор мира'], ['ru-dark/34-area-prompt.png', 'Приближение: карта области'], ['ru-dark/35-consent.png', 'Загрузка — только с вашего разрешения'],
-    ['ru-dark/27-country.png', 'Кнопка «Скачать карту» в стране'],
-  ], 'TravelOpenMap 0.5', 'Обзор мира · карты областей при приближении · согласие на загрузку');
-  await sheet('overview-en-5.png', [
-    ['en-dark/33-world-prompt.png', 'After onboarding: world overview'], ['en-dark/34-area-prompt.png', 'Zooming in: area map'], ['en-dark/35-consent.png', 'Downloads only with your consent'],
-    ['en-dark/27-country.png', 'Download button in a country'],
-  ], 'TravelOpenMap 0.5', 'World overview · area maps when zooming in · download consent');
+  await sheet('overview-ru-6.png', [
+    ['ru-dark/40-online-map.png', 'Карта подгружается сама'], ['ru-dark/41-layers.png', 'Слои: метро, отдых, высоты'], ['ru-dark/31-fog-open.png', 'Кисть: закрасьте — туман уйдёт'],
+    ['ru-dark/36-tour-offer.png', 'Обучение — по желанию'], ['ru-dark/37-tour-fogedit.png', 'Подсказки по интерфейсу'],
+  ], 'TravelOpenMap 0.6', 'Онлайн-карта OpenFreeMap · слои · кисть тумана · запись в фоне · обучение');
+  await sheet('overview-ru-6b.png', [
+    ['ru-dark/33-online-prompt.png', 'Онлайн-карта — по вашему согласию'], ['ru-dark/34-area-prompt.png', 'Сохранить область для офлайна'], ['ru-dark/35-consent.png', 'Согласие перед загрузкой'],
+    ['ru-dark/42-maps.png', 'Сохранённые области и кэш'],
+  ], 'TravelOpenMap 0.6', 'Онлайн-режим включается только с вашего разрешения');
+  await sheet('overview-en-6.png', [
+    ['en-dark/40-online-map.png', 'The map loads by itself'], ['en-dark/41-layers.png', 'Layers: subway, outdoors, elevation'], ['en-dark/31-fog-open.png', 'Brush: paint over the fog to clear it'],
+    ['en-dark/36-tour-offer.png', 'Optional tutorial'], ['en-dark/37-tour-fogedit.png', 'Interface hints'],
+  ], 'TravelOpenMap 0.6', 'OpenFreeMap online map · layers · fog brush · background tracking · tutorial');
+  await sheet('overview-en-6b.png', [
+    ['en-dark/33-online-prompt.png', 'Online maps — only with your consent'], ['en-dark/34-area-prompt.png', 'Save an area for offline'], ['en-dark/35-consent.png', 'Consent before downloading'],
+    ['en-dark/42-maps.png', 'Saved areas and cache'],
+  ], 'TravelOpenMap 0.6', 'Online mode is switched on only with your permission');
   await sheet('overview-ru-4.png', [
     ['ru-dark/00-onboarding-look.png', 'Первый запуск: оформление'], ['ru-dark/00-onboarding-me.png', 'Знакомство: ник обязателен'], ['ru-dark/15b-theme.png', 'Тема: системная, светлая, тёмная'],
     ['ru-dark/09-profile.png', 'Профиль с ником и аватаром'],

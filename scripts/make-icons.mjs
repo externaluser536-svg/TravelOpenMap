@@ -16,13 +16,35 @@ async function render(name, size, html, transparent = false) {
   await p.close();
 }
 const inline = (w, extra = '') => `<div style="width:${w}px;height:${w}px;${extra}">${svg.replace('<svg ', `<svg width="${w}" height="${w}" `)}</div>`;
-// иконка целиком (скруглённый квадрат прямо в svg, поэтому фон — градиент, чтобы не было прозрачных углов)
-await render('icon-only.png', 1024, `<div style="width:1024px;height:1024px;background:linear-gradient(135deg,#3DDC97,#6C8CFF)">${svg.replace('<svg ', '<svg width="1024" height="1024" ').replace(/rx="112"/g, 'rx="0"')}</div>`);
-await render('icon-background.png', 1024, '<div style="width:1024px;height:1024px;background:linear-gradient(135deg,#3DDC97,#6C8CFF)"></div>');
-// передний план адаптивной иконки: только компас в безопасной зоне (66%)
-await render('icon-foreground.png', 1024, `<div style="width:1024px;height:1024px;display:grid;place-items:center"><svg width="640" height="640" viewBox="96 96 320 320"><circle cx="256" cy="256" r="150" fill="none" stroke="#fff" stroke-opacity=".95" stroke-width="18"/><path d="M256 128 L296 256 L256 384 L216 256 Z" fill="#fff"/><path d="M256 128 L296 256 L216 256 Z" fill="#FF6B6B"/><circle cx="256" cy="256" r="16" fill="#0B1220"/></svg></div>`, true);
+// Иконка собирается из двух слоёв внутри public/icon.svg: #bg (фон) и #fg (метка).
+const layer = (keep, { round = true } = {}) => {
+  let x = svg;
+  const drop = keep === 'bg' ? 'fg' : keep === 'fg' ? 'bg' : null;
+  if (drop) x = x.replace(new RegExp(`<g id="${drop}"[\\s\\S]*?\\n  </g>\\n`), '');
+  if (!round) x = x.replace(/rx="112"/g, 'rx="0"').replace(/<rect id="rim"[^>]*\/>\n/, '');
+  return x;
+};
+const sized = (x, w) => x.replace('<svg ', `<svg width="${w}" height="${w}" `);
+// иконка целиком: без скруглений (углы дорисует система)
+await render('icon-only.png', 1024, `<div style="width:1024px;height:1024px;background:#070B1E">${sized(layer('all', { round: false }), 1024)}</div>`);
+await render('icon-background.png', 1024, `<div style="width:1024px;height:1024px;background:#070B1E">${sized(layer('bg', { round: false }), 1024)}</div>`);
+// передний план адаптивной иконки: метка в безопасной зоне (66%) на прозрачном фоне
+await render(
+  'icon-foreground.png',
+  1024,
+  `<div style="width:1024px;height:1024px;display:grid;place-items:center">${sized(layer('fg').replace('viewBox="0 0 512 512"', 'viewBox="66 56 380 380"'), 720)}</div>`,
+  true,
+);
 const splash = (bg) => `<div style="width:2732px;height:2732px;background:${bg};display:grid;place-items:center">${inline(640, 'border-radius:150px;overflow:hidden;box-shadow:0 40px 120px rgba(61,220,151,.35)')}</div>`;
 await render('splash.png', 2732, splash('#0B1220'));
 await render('splash-dark.png', 2732, splash('#0B1220'));
+// значок для README (со скруглением, на прозрачном фоне)
+{
+  const p = await b.newPage({ viewport: { width: 512, height: 512 } });
+  await p.setContent(`<style>html,body{margin:0;width:512px;height:512px;overflow:hidden;background:transparent}</style>${sized(layer('all'), 512)}`);
+  await mkdir(join(ROOT, 'docs/screenshots'), { recursive: true });
+  await writeFile(join(ROOT, 'docs/screenshots/app-icon.png'), await p.screenshot({ omitBackground: true }));
+  await p.close();
+}
 await b.close();
-console.log('resources/*.png готовы');
+console.log('resources/*.png и docs/screenshots/app-icon.png готовы');

@@ -25,8 +25,8 @@ Browser geolocation works on `localhost` (use DevTools → Sensors to fake it). 
 ## 3. Tests
 
 ```bash
-npm run typecheck && npm test        # 84 unit tests
-npm run test:e2e                     # production build, DNS for external hosts disabled, zero-request check + the download gateway is inactive by default
+npm run typecheck && npm test        # unit tests
+npm run test:e2e                     # production build, DNS for external hosts disabled: zero-request check, fog brush, tutorial, and the online mode on mocked servers (npm run test:online)
 ```
 
 ## 4. Android
@@ -59,7 +59,15 @@ Output goes to `release/`: `TravelOpenMap-<version>-test-release.apk`, `…-rele
 
 The app uses no Google Maps, Firebase or other Google services. Location: the native plugin is called with `enableLocationFallback: true` (falls back to the system `LocationManager` when Play Services are missing); if it errors for a reason other than denied permission, the app falls back to the system WebView's Geolocation API. Devices without Google only need Android System WebView. Not verified on a real device without Play Services.
 
-`INTERNET` is **added by default** (`npm run cap:sync` does it) — it is needed only for the optional, off-by-default country-map download. Everything else in the app still cannot open external connections (CSP). For a strict build where the OS itself forbids network access run `node scripts/configure-native.mjs --offline-only` (country download becomes unavailable; add maps by file). `npm run cap:sync` restores the default.
+`INTERNET` is **added by default** (`npm run cap:sync` does it) — it is needed only for the optional, off-by-default online map. Everything else in the app still cannot open external connections (CSP). For a strict build where the OS itself forbids network access run `node scripts/configure-native.mjs --offline-only` (the online map becomes unavailable; add maps by file). `npm run cap:sync` restores the default.
+
+## Background tracking (Android)
+
+*Profile → Settings → Background tracking.* After you confirm, the app starts a foreground service with a persistent notification (a *Stop* button is right in the shade). While the phone is in your pocket the position is queued on the device; when you return, the queued points are replayed in order — fog clears along the whole path and distance and area are counted as usual. It uses the system GPS, no Google Play services.
+
+* Android 13+: allow notifications, otherwise recording works but the notification is not shown.
+* On some phones (Xiaomi, Huawei, Samsung, …) the battery manager restricts background services: disable battery optimisation for TravelOpenMap and allow autostart.
+* Verified: the service and plugin compile on CI, replay order is covered by unit tests. **Not verified on a device:** the service on a real phone and vendor-specific behaviour. iOS has no background tracking (it needs a separate native module).
 
 ## 5. iOS (macOS only)
 
@@ -72,7 +80,7 @@ Permission strings (location, camera, microphone, photos, motion) are added to `
 
 ## 6. Offline maps
 
-The Monaco demo (`public/maps/monaco.pmtiles`) is bundled. **Optional download (with your consent):** after onboarding the app offers a world overview map; zooming into an area without a detailed map offers that area. Manually: *Profile → Offline maps → Add country* → pick a country and detail level (size estimate shown) → *Download map*; if downloads are not yet allowed the app asks first. The default source is the latest daily Protomaps build (`https://build.protomaps.com/YYYYMMDD.pmtiles`); you can set your own URL in the country sheet (*Check source*). The source must be PMTiles v3 (vector), support HTTP Range and CORS (`Access-Control-Allow-Origin`, `Access-Control-Expose-Headers: Content-Range`); only the needed tiles are fetched (limit 300 MB). Or add your own via *Profile → Offline maps → Import .pmtiles*, or drop the file into `public/maps/` and register it in `public/maps/manifest.json`. To produce a file:
+The Monaco demo (`public/maps/monaco.pmtiles`) is bundled. **Online map (with your consent):** after onboarding and the tutorial the app asks whether to switch on the online map ([OpenFreeMap](https://openfreemap.org)): tiles load as you browse and are cached. The Subway, Outdoors and Elevation layers are toggled with the layers button on the map. To keep a map for use without a connection, save the area: *Profile → Offline maps → Pick a country* → detail level → *Save for offline* (an area is capped at 80,000 tiles); zooming into an unfamiliar area offers to save it too. Details: [docs/MAP_SOURCES.md](docs/MAP_SOURCES.md) (Russian). Or add your own via *Profile → Offline maps → Import .pmtiles*, or drop the file into `public/maps/` and register it in `public/maps/manifest.json`. To produce a file:
 
 ```bash
 pmtiles extract https://build.protomaps.com/YYYYMMDD.pmtiles paris.pmtiles --bbox=2.22,48.81,2.47,48.91 --maxzoom=15

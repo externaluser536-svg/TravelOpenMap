@@ -9,6 +9,7 @@ import { ProfileForm, ThemePicker, type ProfileValue } from '../ProfileForm';
 import { checkNickname, normalizeNick } from '../../core/profile';
 import { backgroundSupported } from '../../services/background';
 import { setBackgroundTracking } from '../../services/location';
+import { startTour } from '../../state/tour';
 
 /** Фоновая запись трека: включение — только после объяснения (уведомление, расход батареи). */
 function BackgroundRow() {
@@ -161,6 +162,9 @@ export function SettingsSheet() {
           <Switch checked={p.recordTrack} onChange={(v) => p.set({ recordTrack: v })} label={t('settings.track')} />
         </div>
         <BackgroundRow />
+        <button className="btn ghost block" onClick={startTour}>
+          <Icon name="lightbulb" size={16} /> {t('tour.replay')}
+        </button>
         <div className="set-row">
           <span>
             <Icon name="vibrate" size={18} /> {t('settings.haptics')}

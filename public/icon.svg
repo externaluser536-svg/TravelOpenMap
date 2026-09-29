@@ -1,12 +1,88 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
   <defs>
-    <linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#3DDC97"/><stop offset="1" stop-color="#6C8CFF"/></linearGradient>
-    <radialGradient id="f" cx=".5" cy=".5" r=".5"><stop offset=".4" stop-color="#0B1220" stop-opacity="0"/><stop offset="1" stop-color="#0B1220" stop-opacity=".95"/></radialGradient>
+    <linearGradient id="night" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#101A3F"/>
+      <stop offset="1" stop-color="#070B1E"/>
+    </linearGradient>
+    <radialGradient id="aurora-t" cx=".5" cy=".5" r=".5">
+      <stop offset="0" stop-color="#2EE6A6" stop-opacity=".85"/>
+      <stop offset="1" stop-color="#2EE6A6" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="aurora-v" cx=".5" cy=".5" r=".5">
+      <stop offset="0" stop-color="#8B5CF6" stop-opacity=".9"/>
+      <stop offset="1" stop-color="#8B5CF6" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="aurora-b" cx=".5" cy=".5" r=".5">
+      <stop offset="0" stop-color="#38BDF8" stop-opacity=".8"/>
+      <stop offset="1" stop-color="#38BDF8" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="reveal" cx=".5" cy=".5" r=".5">
+      <stop offset="0" stop-color="#BFFBE4" stop-opacity=".55"/>
+      <stop offset=".65" stop-color="#2EE6A6" stop-opacity=".22"/>
+      <stop offset="1" stop-color="#2EE6A6" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="ring" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#7CFFD4"/>
+      <stop offset="1" stop-color="#7AA7FF"/>
+    </linearGradient>
+    <linearGradient id="pin" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#FFD27A"/>
+      <stop offset=".5" stop-color="#FF8A5C"/>
+      <stop offset="1" stop-color="#FF4F8B"/>
+    </linearGradient>
+    <linearGradient id="gloss" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#fff" stop-opacity=".32"/>
+      <stop offset="1" stop-color="#fff" stop-opacity="0"/>
+    </linearGradient>
+    <radialGradient id="pin-hole" cx=".5" cy=".4" r=".7">
+      <stop offset="0" stop-color="#fff"/>
+      <stop offset="1" stop-color="#FFE3EE"/>
+    </radialGradient>
+    <filter id="fog-blur" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="15"/></filter>
+    <filter id="soft" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="9"/></filter>
+    <filter id="glow" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="14"/></filter>
+    <clipPath id="tile"><rect width="512" height="512" rx="112"/></clipPath>
   </defs>
-  <rect width="512" height="512" rx="112" fill="url(#g)"/>
-  <rect width="512" height="512" rx="112" fill="url(#f)"/>
-  <circle cx="256" cy="256" r="150" fill="none" stroke="#fff" stroke-opacity=".9" stroke-width="18"/>
-  <path d="M256 128 L296 256 L256 384 L216 256 Z" fill="#fff"/>
-  <path d="M256 128 L296 256 L216 256 Z" fill="#FF6B6B"/>
-  <circle cx="256" cy="256" r="16" fill="#0B1220"/>
+
+  <!-- фон: ночное небо, северное сияние, изолинии, «открытая» область и туман по краям -->
+  <g id="bg" clip-path="url(#tile)">
+    <rect width="512" height="512" fill="url(#night)"/>
+    <circle cx="90" cy="430" r="250" fill="url(#aurora-t)"/>
+    <circle cx="430" cy="90" r="230" fill="url(#aurora-v)"/>
+    <circle cx="440" cy="440" r="200" fill="url(#aurora-b)"/>
+    <g fill="none" stroke="#fff" stroke-opacity=".16" stroke-width="2.2">
+      <path d="M96 292c40-64 118-96 184-74s120 78 138 132"/>
+      <path d="M128 330c38-46 100-66 152-50s96 58 110 104"/>
+      <path d="M166 364c30-30 78-42 116-30s70 40 80 72"/>
+      <path d="M62 236c50-88 154-132 244-98s146 118 150 196"/>
+    </g>
+    <circle cx="256" cy="262" r="176" fill="url(#reveal)"/>
+    <circle cx="256" cy="262" r="150" fill="none" stroke="url(#ring)" stroke-width="5" stroke-opacity=".9"/>
+    <circle cx="256" cy="262" r="150" fill="none" stroke="#fff" stroke-opacity=".5" stroke-width="1.5" stroke-dasharray="3 11" transform="rotate(12 256 262)" transform-origin="256 262"/>
+    <g filter="url(#fog-blur)" fill="#EAF1FF">
+      <circle cx="26" cy="38" r="54" opacity=".8"/>
+      <circle cx="96" cy="14" r="42" opacity=".7"/>
+      <circle cx="6" cy="116" r="46" opacity=".65"/>
+      <circle cx="484" cy="486" r="64" opacity=".85"/>
+      <circle cx="414" cy="508" r="48" opacity=".75"/>
+      <circle cx="508" cy="412" r="48" opacity=".7"/>
+      <circle cx="24" cy="476" r="46" opacity=".6"/>
+      <circle cx="78" cy="512" r="36" opacity=".55"/>
+      <circle cx="506" cy="34" r="34" opacity=".5"/>
+    </g>
+    <rect width="512" height="256" fill="url(#gloss)" opacity=".55"/>
+    <rect id="rim" x="1.5" y="1.5" width="509" height="509" rx="110.5" fill="none" stroke="#fff" stroke-opacity=".2" stroke-width="3"/>
+  </g>
+
+  <!-- передний план: светящаяся метка -->
+  <g id="fg">
+    <ellipse cx="256" cy="392" rx="74" ry="16" fill="#000" opacity=".4" filter="url(#soft)"/>
+    <path d="M256 104c-56 0-102 45-102 102 0 78 102 178 102 178s102-100 102-178c0-57-46-102-102-102z" fill="#FF7A9C" opacity=".55" filter="url(#glow)"/>
+    <path d="M256 112c-52 0-94 41-94 94 0 73 94 168 94 168s94-95 94-168c0-53-42-94-94-94z" fill="url(#pin)"/>
+    <path d="M256 112c-52 0-94 41-94 94 0 20 6 40 15 58 6-72 40-118 96-128 40-7 70 8 88 26-16-30-53-50-105-50z" fill="#fff" opacity=".28"/>
+    <circle cx="256" cy="208" r="40" fill="url(#pin-hole)"/>
+    <circle cx="256" cy="208" r="40" fill="none" stroke="#FF4F8B" stroke-opacity=".35" stroke-width="3"/>
+    <path d="M256 186l11 22-11 22-11-22z" fill="#FF4F8B"/>
+    <path d="M256 186l11 22h-22z" fill="#FFB0C6"/>
+  </g>
 </svg>

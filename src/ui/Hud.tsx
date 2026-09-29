@@ -88,16 +88,16 @@ export function Hud() {
             <CompassRose size={26} angle={-bearing} />
           </button>
         )}
-        <button className={`fab glass ${follow ? 'on' : ''}`} onClick={locateMe} aria-label={t('hud.locate')}>
+        <button className={`fab glass ${follow ? 'on' : ''}`} onClick={locateMe} aria-label={t('hud.locate')} data-tour="locate">
           <Icon name={gps === 'denied' ? 'locate-off' : 'locate'} />
         </button>
-        <button className={`fab glass ${peek ? 'on' : ''}`} onClick={togglePeek} aria-label={t('hud.peek')}>
+        <button className={`fab glass ${peek ? 'on' : ''}`} onClick={togglePeek} aria-label={t('hud.peek')} data-tour="peek">
           <Icon name={peek ? 'eye' : 'eye-off'} />
         </button>
         <button className={`fab glass ${mode === 'measure' ? 'on' : ''}`} onClick={toggleMeasure} aria-label={t('hud.measure')}>
           <Icon name="ruler" />
         </button>
-        <button className="fab glass" onClick={() => startFogEdit('open')} aria-label={t('hud.fogedit')}>
+        <button className="fab glass" onClick={() => startFogEdit('open')} aria-label={t('hud.fogedit')} data-tour="fogedit">
           <Icon name="brush" />
         </button>
         <button className="fab glass" onClick={() => patch({ sheet: { type: 'layers' } })} aria-label={t('hud.layers')} data-tour="layers">
@@ -107,7 +107,7 @@ export function Hud() {
 
       {training && <WorkoutPanel />}
       {mode === 'normal' && !training && (
-        <div className="stat-pill glass">
+        <div className="stat-pill glass" data-tour="stats">
           <span>
             <Icon name="map" size={14} />
             <b>{formatArea(stats.areaM2, units, lang)}</b>
