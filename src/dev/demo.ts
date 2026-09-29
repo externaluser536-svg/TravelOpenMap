@@ -320,7 +320,7 @@ export async function seedDemo(): Promise<void> {
   engine.quiet = true;
   await engine.resetAll();
   const prefs = usePrefs.getState();
-  prefs.set({ onboarded: true, completed: {}, zones: [] });
+  prefs.set({ onboarded: true, completed: {}, zones: [], ...(prefs.nickname ? {} : { nickname: prefs.lang === 'ru' ? 'Алекс' : 'Alex', avatarIcon: 'mountain', avatarColor: '#6C8CFF' }) });
 
   const plan: [number, number][] = [[13, 40], [12, 55], [11, 45], [9, 60], [8, 70], [7, 50], [6, 55], [5, 45], [3, 35], [2, 50], [1, 35]];
   const now = Date.now();

@@ -32,7 +32,11 @@ async function session({ theme, lang, onboarded = true }) {
   const page = await ctx.newPage();
   page.on('pageerror', (e) => console.error('[pageerror]', e.message));
   await page.addInitScript(
-    ([l, ob]) => localStorage.setItem('tom.prefs.v1', JSON.stringify({ state: { onboarded: ob, lang: l, theme: 'auto' }, version: 0 })),
+    ([l, ob]) =>
+      localStorage.setItem(
+        'tom.prefs.v1',
+        JSON.stringify({ state: { onboarded: ob, lang: l, theme: 'auto', ...(ob ? { nickname: l === 'ru' ? 'Алекс' : 'Alex', avatarIcon: 'mountain', avatarColor: '#6C8CFF' } : {}) }, version: 0 }),
+      ),
     [lang, onboarded],
   );
   await page.goto(server.url);
@@ -129,7 +133,7 @@ async function scenes(theme, lang, which) {
     await s('08-challenges');
   }
   if (want('stats')) {
-    await tab(page, 'profile'); await subtab(page, 0); await page.waitForTimeout(600);
+    await tab(page, 'profile'); await subtab(page, 0); await scrollPage(page, 0); await page.waitForTimeout(600);
     await s('09-profile');
     await scrollPage(page, 560); await s('09b-charts');
     await scrollPage(page, 1180); await s('09c-calendar');
@@ -167,6 +171,7 @@ async function scenes(theme, lang, which) {
   if (want('settings')) {
     await scrollPage(page, 99999);
     await click(page, '.card.list .row', 0); await page.waitForTimeout(500); await s('15-settings');
+    await page.evaluate(() => document.querySelector('.sheet-body').scrollTo(0, 560)); await s('15b-theme');
     await closeSheet(page);
     await click(page, '.card.list .row', 1); await page.waitForTimeout(500); await s('16-maps');
     await closeSheet(page);
@@ -242,19 +247,29 @@ async function scenes(theme, lang, which) {
 
 async function onboarding(lang) {
   const { ctx, page } = await session({ theme: 'dark', lang, onboarded: false });
+  const dir = `${lang}-dark`;
   await page.waitForTimeout(800);
-  await shot(page, `${lang}-dark`, '00-onboarding-1')();
-  await click(page, '.onboarding .btn.primary'); await click(page, '.onboarding .btn.primary'); await click(page, '.onboarding .btn.primary');
-  await shot(page, `${lang}-dark`, '00-onboarding-4')();
+  await shot(page, dir, '00-onboarding-1')();
+  const next = () => click(page, '.onboarding .btn.primary');
+  for (let i = 0; i < 4; i++) { await next(); await page.waitForTimeout(250); }
+  await shot(page, dir, '00-onboarding-look')();
+  await next(); await page.waitForTimeout(300);
+  await page.locator('.onboarding .btn.primary').click({ force: true }); // без ника — показывает ошибку и не пускает дальше
+  await page.waitForTimeout(300);
+  await shot(page, dir, '00-onboarding-nick-required')();
+  await page.fill('.onboarding input.input', lang === 'ru' ? 'Алекс' : 'Alex');
+  await click(page, '.pf-ic', 1);
+  await shot(page, dir, '00-onboarding-me')();
   await ctx.close();
 }
 
 try {
   await onboarding('ru');
+  await onboarding('en');
   await scenes('dark', 'ru');
   await scenes('light', 'ru', ['map', 'overview', 'peek', 'quests', 'stats', 'note', 'workout', 'trips', 'mapedit']);
   // английский интерфейс — только ключевые экраны
-  await scenes('dark', 'en', ['map', 'quests', 'stats', 'note', 'privacy', 'workout', 'trips', 'countries', 'mapedit']);
+  await scenes('dark', 'en', ['map', 'quests', 'stats', 'note', 'privacy', 'settings', 'workout', 'trips', 'countries', 'mapedit']);
 
   // ---- обзор с рамками устройств
   const img = async (p) => `data:image/png;base64,${(await readFile(join(OUT, p))).toString('base64')}`;
@@ -286,6 +301,10 @@ try {
     ['ru-dark/29-clusters.png', 'Метки собираются в группы'], ['ru-dark/30-menu.png', 'Долгое нажатие: метка в любом месте'], ['ru-dark/31-fog-open.png', 'Открыть туман кругом'],
     ['ru-dark/32-fog-area.png', 'Закрыть область'],
   ], 'TravelOpenMap 0.3', 'Группировка меток · метки в любом месте · ручная правка тумана');
+  await sheet('overview-ru-4.png', [
+    ['ru-dark/00-onboarding-look.png', 'Первый запуск: оформление'], ['ru-dark/00-onboarding-me.png', 'Знакомство: ник обязателен'], ['ru-dark/15b-theme.png', 'Тема: системная, светлая, тёмная'],
+    ['ru-dark/09-profile.png', 'Профиль с ником и аватаром'],
+  ], 'TravelOpenMap 0.4', 'Знакомство · выбор темы · release-сборки');
   await sheet('overview-en.png', [
     ['en-dark/01-map.png', 'The fog clears as you walk'], ['en-dark/05-note.png', 'Notes with photos & video'], ['en-dark/07-quests.png', 'Levels & challenges'],
     ['en-dark/09b-charts.png', 'Stats in charts'], ['en-dark/14-privacy.png', 'Zero external requests'],
@@ -298,6 +317,10 @@ try {
     ['en-dark/29-clusters.png', 'Pins group into clusters'], ['en-dark/30-menu.png', 'Long-press: pin anywhere'], ['en-dark/31-fog-open.png', 'Reveal fog with a circle'],
     ['en-dark/32-fog-area.png', 'Cover an area'],
   ], 'TravelOpenMap 0.3', 'Pin clustering · pins anywhere · manual fog editing');
+  await sheet('overview-en-4.png', [
+    ['en-dark/00-onboarding-look.png', 'First run: look & feel'], ['en-dark/00-onboarding-me.png', 'Getting acquainted: nickname required'], ['en-dark/15b-theme.png', 'Theme: system, light, dark'],
+    ['en-dark/09-profile.png', 'Profile with nickname and avatar'],
+  ], 'TravelOpenMap 0.4', 'Onboarding · theme choice · release builds');
   const { before, after } = await optimizeDir(OUT);
   console.log(`  ✓ PNG сжаты: ${(before / 1e6).toFixed(1)} → ${(after / 1e6).toFixed(1)} МБ`);
 } finally {

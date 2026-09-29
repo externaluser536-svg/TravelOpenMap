@@ -13,7 +13,7 @@ interface BackupFile {
   app: 'TravelOpenMap';
   version: 1;
   createdAt: number;
-  prefs: { zones: ExclusionZone[]; completed: CompletedMap };
+  prefs: { zones: ExclusionZone[]; completed: CompletedMap; profile?: { nickname: string; avatarIcon: string; avatarColor: string; homeCountry: string; weightKg: number } };
   notes: Note[];
   media: (Omit<MediaRecord, 'blob' | 'thumb'> & { data?: string; thumbData?: string })[];
   fog: { key: number; cells: number[] }[];
@@ -49,7 +49,11 @@ export async function exportBackup(includeMedia: boolean): Promise<Blob> {
     app: 'TravelOpenMap',
     version: 1,
     createdAt: Date.now(),
-    prefs: { zones: prefs.zones, completed: prefs.completed },
+    prefs: {
+      zones: prefs.zones,
+      completed: prefs.completed,
+      profile: { nickname: prefs.nickname, avatarIcon: prefs.avatarIcon, avatarColor: prefs.avatarColor, homeCountry: prefs.homeCountry, weightKg: prefs.weightKg },
+    },
     notes: includeMedia ? notes : notes.map((n) => ({ ...n, mediaIds: [] })),
     media,
     fog: (await loadFogChunks()).map((c) => ({ key: c.key, cells: Array.from(c.cells) })),
@@ -78,6 +82,6 @@ export async function importBackup(file: Blob): Promise<{ notes: number; cells: 
   for (const t of data.tracks) await putTrack(t);
   for (const w of data.workouts ?? []) await putWorkout(w);
   for (const t of data.trips ?? []) await putTrip(t);
-  usePrefs.getState().set({ zones: data.prefs.zones ?? [], completed: data.prefs.completed ?? {} });
+  usePrefs.getState().set({ zones: data.prefs.zones ?? [], completed: data.prefs.completed ?? {}, ...(data.prefs.profile?.nickname ? data.prefs.profile : {}) });
   return { notes: data.notes.length, cells: data.fog.reduce((s, c) => s + c.cells.length, 0) };
 }

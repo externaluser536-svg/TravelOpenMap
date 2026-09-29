@@ -3,6 +3,7 @@ import { usePrefs } from '../../state/prefs';
 import { useT } from '../../i18n';
 import { Icon } from '../icons';
 import { ProgressRing, Row, Segmented } from '../common';
+import { Avatar } from '../ProfileForm';
 import { StatsView } from './StatsView';
 import { QuestsView } from './QuestsPage';
 import { TripsView } from './TripsView';
@@ -14,6 +15,9 @@ export function ProfilePage() {
   const tab = useApp((s) => s.profileTab);
   const patch = useApp((s) => s.patch);
   const zones = usePrefs((s) => s.zones);
+  const nickname = usePrefs((s) => s.nickname);
+  const avatarIcon = usePrefs((s) => s.avatarIcon);
+  const avatarColor = usePrefs((s) => s.avatarColor);
   const open = (type: 'settings' | 'maps' | 'zones' | 'data' | 'privacy') => patch({ sheet: { type } });
 
   return (
@@ -21,12 +25,12 @@ export function ProfilePage() {
       <div className="page-scroll pad-top">
         <section className="profile-head">
           <ProgressRing value={level.progress} size={72} stroke={5}>
-            <Icon name="user" size={26} />
+            <Avatar icon={avatarIcon} color={avatarColor} size={52} />
           </ProgressRing>
-          <div>
-            <h1>{t(level.titleKey)}</h1>
+          <div className="ph-main">
+            <h1>{nickname || t(level.titleKey)}</h1>
             <p className="muted">
-              {t('level.short')} {level.level} · {level.xp} XP
+              {t(level.titleKey)} · {t('level.short')} {level.level} · {level.xp} XP
             </p>
           </div>
           <button className="icon-btn big" onClick={() => open('settings')} aria-label={t('settings.title')}>

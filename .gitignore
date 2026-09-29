@@ -18,3 +18,10 @@ tools/*.osm.pbf
 *.osm.pbf
 .venv/
 __pycache__/
+
+# ключи подписи: свои не коммитим; тестовый ключ (публичный) — исключение
+android/keystore.properties
+*.jks
+*.keystore
+!android/keystore/tom-test.jks
+release/

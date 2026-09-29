@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useSyncExternalStore } from 'react';
+import { usePrefs, resolveTheme } from '../state/prefs';
 import { getMedia, getMediaForNote, type MediaRecord, type Note } from '../data/db';
 import { blobUrl } from '../services/media';
 
@@ -48,4 +49,20 @@ export function fmtDate(ts: number, lang: string, withTime = false): string {
     ? { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }
     : { day: 'numeric', month: 'short', year: 'numeric' };
   return d.toLocaleString(lang === 'ru' ? 'ru-RU' : 'en-GB', opts);
+}
+
+const lightQuery = typeof matchMedia === 'undefined' ? null : matchMedia('(prefers-color-scheme: light)');
+
+/** Действующая тема: «системная» следует за настройкой ОС и меняется на лету. */
+export function useResolvedTheme(): 'light' | 'dark' {
+  const pref = usePrefs((s) => s.theme);
+  const system = useSyncExternalStore<'light' | 'dark'>(
+    (cb) => {
+      lightQuery?.addEventListener('change', cb);
+      return () => lightQuery?.removeEventListener('change', cb);
+    },
+    () => (lightQuery?.matches ? 'light' : 'dark'),
+    () => 'dark',
+  );
+  return pref === 'auto' ? system : resolveTheme(pref);
 }

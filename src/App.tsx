@@ -3,7 +3,8 @@ import { App as CapApp } from '@capacitor/app';
 import { StatusBar, Style } from '@capacitor/status-bar';
 import { Capacitor } from '@capacitor/core';
 import { useApp } from './state/store';
-import { usePrefs, resolveTheme } from './state/prefs';
+import { usePrefs } from './state/prefs';
+import { useResolvedTheme } from './ui/hooks';
 import { engine } from './state/engine';
 import { MapView } from './map/MapView';
 import { openMap, loadCatalog } from './map/maps';
@@ -35,9 +36,8 @@ export default function App() {
   const screen = useApp((s) => s.screen);
   const sheet = useApp((s) => s.sheet);
   const mapInfo = useApp((s) => s.mapInfo);
-  const onboarded = usePrefs((s) => s.onboarded);
   const lang = usePrefs((s) => s.lang);
-  const themePref = usePrefs((s) => s.theme);
+  const theme = useResolvedTheme();
 
   // ---- запуск: БД → карта → геолокация
   useEffect(() => {
@@ -67,10 +67,10 @@ export default function App() {
   // ---- статус-бар и кнопка «Назад» на Android
   useEffect(() => {
     if (!Capacitor.isNativePlatform()) return;
-    const dark = resolveTheme(themePref) === 'dark';
+    const dark = theme === 'dark';
     void StatusBar.setStyle({ style: dark ? Style.Dark : Style.Light }).catch(() => {});
     void StatusBar.setOverlaysWebView({ overlay: true }).catch(() => {});
-  }, [themePref]);
+  }, [theme]);
 
   useEffect(() => {
     if (!Capacitor.isNativePlatform()) return;
@@ -120,7 +120,7 @@ export default function App() {
       {screen !== 'map' && screen !== 'workout' && <WorkoutMini />}
       <Toasts />
       <LevelUp />
-      {!onboarded && <Onboarding />}
+      <Onboarding />
     </div>
   );
 }

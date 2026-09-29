@@ -1,0 +1,69 @@
+name: Тестовый release
+
+# Собирает тестовую версию: подписанный APK, AAB и веб-архив, публикует пре-релиз на GitHub.
+# Запускается вручную, при пуше в ветки claude/** и по тегам v*.
+on:
+  workflow_dispatch:
+  push:
+    branches: ['claude/**']
+    tags: ['v*', '!v*-test.*']
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-test-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - uses: android-actions/setup-android@v3
+
+      - run: npm ci
+
+      - name: Проверки (типы и юнит-тесты)
+        run: |
+          npm run typecheck
+          npm test
+
+      - name: Release-сборка (Android APK + AAB, веб)
+        env:
+          # тестовый ключ из репозитория; для настоящего релиза задайте секреты TOM_KEYSTORE_* и уберите --test-key
+          CI: 'true'
+        run: node scripts/release.mjs --test-key
+
+      - name: Версия
+        id: ver
+        run: echo "version=$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: TravelOpenMap-${{ steps.ver.outputs.version }}-test
+          path: release/*
+          if-no-files-found: error
+
+      - name: Пре-релиз на GitHub
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="v${{ steps.ver.outputs.version }}-test.${{ github.run_number }}"
+          gh release create "$TAG" release/* \
+            --prerelease \
+            --target "$GITHUB_SHA" \
+            --title "TravelOpenMap ${{ steps.ver.outputs.version }} (тестовая версия, сборка ${{ github.run_number }})" \
+            --notes "Тестовая сборка. APK подписан публичным тестовым ключом — только для проверки, не для магазинов. Контрольные суммы — в SHA256SUMS.txt."

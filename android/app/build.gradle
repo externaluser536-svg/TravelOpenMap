@@ -1,4 +1,25 @@
+import groovy.json.JsonSlurper
+
 apply plugin: 'com.android.application'
+
+// Версия приложения берётся из package.json: 0.4.0 → versionName 0.4.0, versionCode 400 (можно переопределить -PversionCodeOverride=N)
+def pkg = new JsonSlurper().parse(file('../../package.json'))
+def semver = pkg.version.tokenize('.').collect { it.replaceAll(/\D.*/, '').toInteger() }
+
+// Подпись release. Приоритет: переменные окружения → android/keystore.properties → тестовый ключ (только с -PtestKeystore).
+// Без ключа собирается неподписанный APK.
+def signingProps = new Properties()
+if (System.getenv('TOM_KEYSTORE_FILE')) {
+    signingProps['storeFile'] = System.getenv('TOM_KEYSTORE_FILE')
+    signingProps['storePassword'] = System.getenv('TOM_KEYSTORE_PASSWORD')
+    signingProps['keyAlias'] = System.getenv('TOM_KEY_ALIAS')
+    signingProps['keyPassword'] = System.getenv('TOM_KEY_PASSWORD')
+} else if (rootProject.file('keystore.properties').exists()) {
+    rootProject.file('keystore.properties').withInputStream { signingProps.load(it) }
+} else if (project.hasProperty('testKeystore')) {
+    rootProject.file('keystore/test.properties').withInputStream { signingProps.load(it) }
+}
+def hasSigning = signingProps['storeFile'] != null
 
 android {
     namespace = "app.travelopenmap"
@@ -7,8 +28,8 @@ android {
         applicationId "app.travelopenmap"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 1
-        versionName "1.0"
+        versionCode project.hasProperty('versionCodeOverride') ? project.property('versionCodeOverride').toInteger() : semver[0] * 10000 + semver[1] * 100 + semver[2]
+        versionName pkg.version
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
@@ -16,8 +37,20 @@ android {
             ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
         }
     }
+    signingConfigs {
+        if (hasSigning) {
+            release {
+                storeFile rootProject.file(signingProps['storeFile'])
+                storePassword signingProps['storePassword']
+                keyAlias signingProps['keyAlias']
+                keyPassword signingProps['keyPassword']
+            }
+        }
+    }
     buildTypes {
         release {
+            if (hasSigning) signingConfig signingConfigs.release
+            debuggable false
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
         }
@@ -43,12 +76,3 @@ dependencies {
 }
 
 apply from: 'capacitor.build.gradle'
-
-try {
-    def servicesJSON = file('google-services.json')
-    if (servicesJSON.text) {
-        apply plugin: 'com.google.gms.google-services'
-    }
-} catch(Exception e) {
-    logger.info("google-services.json not found, google-services plugin not applied. Push Notifications won't work")
-}

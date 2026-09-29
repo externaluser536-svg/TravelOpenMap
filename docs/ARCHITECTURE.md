@@ -68,6 +68,18 @@ XP — **производная величина**: `baseXp(stats) + награ�
 * **Долгое нажатие.** `MapView` слушает `pointerdown/move/up` контейнера карты: 550 мс без сдвига > 10 px (или `contextmenu`) → `mapMenu` в сторе → меню `MapMenuView` в `Hud`: метка (`startNoteAt`), открыть/закрыть туман (`startFogEdit`), измерение (`startMeasureAt`). Нажатия на метках и маркере игрока игнорируются.
 * **Группировка.** `map/clusters.ts` — обёртка над `supercluster` (радиус 46 px, `maxZoom` 20; свойства кластера накапливают счётчики категорий). `MapView` пересчитывает видимые значки при смене целого zoom и по `moveend`, держит `Marker` на каждый значок и рисует содержимое порталами React: `ClusterBubble` (счётчик + кольцо `conic-gradient` по долям категорий) или обычную метку. Нажатие на группу приближает карту до её `expansionZoom`; если группа не делится даже на максимальном zoom, открывается `ClusterSheet` со списком заметок.
 
+## Профиль и знакомство (0.4)
+
+`core/profile.ts` — правила ника (2–24 символа, буквы любых алфавитов, цифры, пробел, `_ - .`), набор аватаров, детерминированный подбор аватара по нику. Поля профиля (`nickname`, `avatarIcon`, `avatarColor`, `homeCountry`, `weightKg`) лежат в настройках (`state/prefs.ts`) и входят в резервную копию. `Onboarding` показывает слайды → шаг «Оформление» → шаг «Знакомство»; без корректного ника не пускает дальше. Если приложение обновилось у пользователя, который уже прошёл знакомство без ника, показывается только шаг с ником. Тема: `useResolvedTheme` подписывается на `prefers-color-scheme`, поэтому режим «Системная» меняется на лету.
+
+## Геолокация без Google Play Services
+
+`services/location.ts`: нативный плагин с `enableLocationFallback: true` (запасной `LocationManager`), при ошибке не из-за отказа в доступе — Geolocation API WebView. Google-сервисы в приложении больше нигде не используются; плагин `google-services` из Gradle убран.
+
+## Release-сборки
+
+`android/app/build.gradle` берёт версию из `package.json`, подпись — из переменных окружения, `android/keystore.properties` или (с `-PtestKeystore`) тестового ключа. `scripts/release.mjs` собирает APK/AAB/веб-архив в `release/` и считает SHA-256; `.github/workflows/release-test.yml` делает то же на GitHub и публикует пре-релиз.
+
 ## Карта
 
 `map/pmtiles.ts` регистрирует протокол `pmtiles://` в MapLibre. Источники: файл из `public/maps` (HTTP Range) или `Blob` из IndexedDB (`FileSource`). Стиль (`map/style.ts`) — слои `@protomaps/basemaps` с доработанной палитрой, глифы и спрайты — абсолютные локальные URL (нужны воркерам). MapLibre 6 требует явного `setWorkerUrl` — подключён через Vite (`?worker&url`).
@@ -92,6 +104,8 @@ XP — **производная величина**: `baseXp(stats) + награ�
 * `tests/core.test.ts` — гео, сетка тумана, уровни, челленджи, серии дней, GPX;
 * `tests/workout.test.ts` — метрики тренировок, сплиты, площади, калории, антисбой GPS;
 * `tests/trips-stats.test.ts` — планировщик поездок и агрегаты статистики;
+* `tests/profile.test.ts` — правила ника и подбор аватара;
+* `tests/location.test.ts` — запасной путь геолокации без Google Play Services;
 * `tests/fogedit.test.ts` — выбор ячеек (круг/многоугольник), `FogGrid.remove`, движок: открытие/закрытие, зоны, отмена, сохранение;
 * `tests/clusters.test.ts` — группировка меток и кольцо категорий;
 * `tests/extract.test.ts` — экстрактор/писатель PMTiles (round-trip через `pmtiles`-reader);

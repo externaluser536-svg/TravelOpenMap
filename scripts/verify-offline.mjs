@@ -50,7 +50,7 @@ try {
   page.on('pageerror', (e) => console.error('[pageerror]', e.message));
   await page.exposeFunction('__csp', (u) => csp.push(u));
   await page.addInitScript(() => {
-    localStorage.setItem('tom.prefs.v1', JSON.stringify({ state: { onboarded: true, lang: 'ru', theme: 'dark' }, version: 0 }));
+    localStorage.setItem('tom.prefs.v1', JSON.stringify({ state: { onboarded: true, lang: 'ru', theme: 'dark', nickname: 'Тест' }, version: 0 }));
     document.addEventListener('securitypolicyviolation', (e) => window.__csp(`${e.violatedDirective} ← ${e.blockedURI}`));
   });
   await page.goto(server.url);

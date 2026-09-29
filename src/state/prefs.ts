@@ -33,6 +33,12 @@ export interface Prefs {
   mapSourceUrl: string;
   /** вес для расчёта калорий, кг */
   weightKg: number;
+  /** ник игрока (обязателен при первом запуске) */
+  nickname: string;
+  avatarIcon: string;
+  avatarColor: string;
+  /** код страны проживания ('' — не указана) */
+  homeCountry: string;
 }
 
 export const DEFAULT_PREFS: Prefs = {
@@ -53,6 +59,10 @@ export const DEFAULT_PREFS: Prefs = {
   allowDownloads: false,
   mapSourceUrl: '',
   weightKg: 70,
+  nickname: '',
+  avatarIcon: 'compass',
+  avatarColor: '#3DDC97',
+  homeCountry: '',
 };
 
 interface PrefsStore extends Prefs {

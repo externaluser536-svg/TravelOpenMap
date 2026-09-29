@@ -27,7 +27,9 @@ The world starts hidden in fog — it clears where you have been. Save places wi
 | 🌍 **Country maps** | Country catalogue, four detail levels, size estimate. Download is optional (see [Offline & privacy](#-offline--privacy)); your own `.pmtiles` import from a file. |
 | 🛡️ **Excluded zones** | Inside a circle (home, work) fog does not clear and steps/route are not recorded. |
 | 💾 **Your data** | On-device IndexedDB, single-file backup, GPX and GeoJSON export. |
-| 🌗 **Look** | Dark / light, Russian and English, metric / imperial. |
+| 👤 **Onboarding & profile** | First launch asks for a nickname (required), avatar, country, weight, language, theme, units. All editable in Settings. |
+| 🌗 **Theme** | System (follows the phone), light or dark — cards with previews in Settings. Russian and English, metric / imperial. |
+| 📵 **No Google Play needed** | No Google services; location falls back to the system GPS. |
 
 ## 📸 Screenshots
 
@@ -52,7 +54,7 @@ The world starts hidden in fog — it clears where you have been. Save places wi
 </tr>
 </table>
 
-Overviews: [0.2](docs/screenshots/overview-en-2.png) · [0.3](docs/screenshots/overview-en-3.png). Light theme and Russian UI — in [`docs/screenshots`](docs/screenshots).
+Overviews: [0.2](docs/screenshots/overview-en-2.png) · [0.3](docs/screenshots/overview-en-3.png) · [0.4](docs/screenshots/overview-en-4.png). Light theme and Russian UI — in [`docs/screenshots`](docs/screenshots).
 
 ## 🗺️ Offline maps
 
@@ -83,15 +85,17 @@ Capacitor 8 · React 19 · TypeScript · Vite · MapLibre GL 6 · PMTiles · `@p
 ```bash
 npm install
 npm run dev          # http://localhost:5173 ; ?demo loads demo data (a route in Monaco)
-npm test             # 84 unit tests
+npm test             # 93 unit tests
 npm run test:e2e     # zero-request check
 npm run build        # dist/
+npm run release:test # test release: APK + AAB + web archive → release/
 ```
 
 Android/iOS builds, signing, maps, troubleshooting: **[INSTALLATION.en.md](INSTALLATION.en.md)**.
 
 ## ⚠️ Limitations
 
+* The Android release build (APK/AAB) is configured and built in GitHub Actions ([`release-test.yml`](.github/workflows/release-test.yml)); it is signed with a public test key — for testing only.
 * Verified in Chromium (unit tests, e2e, screenshots). Native Android/iOS builds, real GPS/compass sensors, phone camera, and iOS WKWebView behaviour were not tested on devices.
 * Country download was tested against a local PMTiles server; the real Protomaps server was not. The source must support HTTP Range and CORS.
 * Fog and workouts are recorded while the app is on screen; no background GPS.

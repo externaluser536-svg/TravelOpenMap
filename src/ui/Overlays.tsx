@@ -3,7 +3,9 @@ import { useApp } from '../state/store';
 import { usePrefs } from '../state/prefs';
 import { useT } from '../i18n';
 import { Icon } from './icons';
-import { ProgressRing } from './common';
+import { ProgressRing, Segmented } from './common';
+import { ProfileForm, ThemePicker, type ProfileValue } from './ProfileForm';
+import { checkNickname, normalizeNick } from '../core/profile';
 import { startLocation } from '../services/location';
 import { startCompass } from '../services/compass';
 
@@ -74,47 +76,131 @@ const SLIDES = [
   { icon: 'wifi-off', tone: '#F472B6', title: 'onb.4.title', text: 'onb.4.text' },
 ];
 
+type Step = { kind: 'slide'; icon: string; tone: string; title: string; text: string } | { kind: 'look' } | { kind: 'me' };
+const STEPS: Step[] = [...SLIDES.map((x) => ({ kind: 'slide' as const, ...x })), { kind: 'look' }, { kind: 'me' }];
+const LOOK = STEPS.findIndex((x) => x.kind === 'look');
+const ME = STEPS.findIndex((x) => x.kind === 'me');
+
 export function Onboarding() {
   const { t } = useT();
   const done = usePrefs((s) => s.onboarded);
-  const [i, setI] = useState(0);
+  const savedNick = usePrefs((s) => s.nickname);
+  // уже знакомые пользователи предыдущих версий: спрашиваем только ник
+  const nickOnly = done && checkNickname(savedNick) !== 'ok';
+  const prefs = usePrefs();
+  const [i, setI] = useState(nickOnly ? ME : 0);
+  const [draft, setDraft] = useState<ProfileValue>({
+    nickname: savedNick,
+    avatarIcon: prefs.avatarIcon,
+    avatarColor: prefs.avatarColor,
+    homeCountry: prefs.homeCountry,
+    weightKg: prefs.weightKg,
+  });
+  const [tried, setTried] = useState(false);
   useEffect(() => {
-    setI(0);
-  }, [done]);
-  if (done) return null;
-  const last = i === SLIDES.length - 1;
+    setI(nickOnly ? ME : 0);
+  }, [done, nickOnly]);
+  if (done && !nickOnly) return null;
+
+  const step = STEPS[i];
+  const nickOk = checkNickname(draft.nickname) === 'ok';
   const finish = () => {
-    usePrefs.getState().set({ onboarded: true });
-    void startLocation();
-    void startCompass(true);
+    if (!nickOk) {
+      setTried(true);
+      return;
+    }
+    const wasOnboarded = usePrefs.getState().onboarded;
+    usePrefs.getState().set({ ...draft, nickname: normalizeNick(draft.nickname), onboarded: true });
+    if (!wasOnboarded) {
+      void startLocation();
+      void startCompass(true);
+    }
   };
-  const s = SLIDES[i];
   return (
-    <div className="onboarding">
-      <button className="skip" onClick={finish}>
-        {t('onb.skip')}
-      </button>
-      <div className="onb-art" style={{ ['--c' as string]: s.tone }} key={i}>
-        <span className="onb-ring r1" />
-        <span className="onb-ring r2" />
-        <span className="onb-ic">
-          <Icon name={s.icon} size={54} strokeWidth={1.8} />
-        </span>
+    <div className="onboarding" role="dialog" aria-modal="true">
+      <div className="onb-top">
+        {i > 0 && !nickOnly ? (
+          <button className="skip" onClick={() => setI(i - 1)}>
+            {t('onb.back')}
+          </button>
+        ) : (
+          <span />
+        )}
+        {step.kind === 'slide' ? (
+          <button className="skip" onClick={() => setI(LOOK)}>
+            {t('onb.skip')}
+          </button>
+        ) : (
+          <span />
+        )}
       </div>
-      <div className="onb-text" key={`t${i}`}>
-        <h1>{t(s.title)}</h1>
-        <p>{t(s.text)}</p>
-      </div>
-      <div className="onb-foot">
-        <div className="dots">
-          {SLIDES.map((_, k) => (
-            <i key={k} className={k === i ? 'on' : ''} />
-          ))}
+
+      {step.kind === 'slide' && (
+        <>
+          <div className="onb-art" style={{ ['--c' as string]: step.tone }} key={i}>
+            <span className="onb-ring r1" />
+            <span className="onb-ring r2" />
+            <span className="onb-ic">
+              <Icon name={step.icon} size={54} strokeWidth={1.8} />
+            </span>
+          </div>
+          <div className="onb-text" key={`t${i}`}>
+            <h1>{t(step.title)}</h1>
+            <p>{t(step.text)}</p>
+          </div>
+        </>
+      )}
+
+      {step.kind === 'look' && (
+        <div className="onb-form" key="look">
+          <div className="onb-text left">
+            <h1>{t('onb.look.title')}</h1>
+            <p>{t('onb.look.text')}</p>
+          </div>
+          <div className="form">
+            <div className="set-col">
+              <span><Icon name="languages" size={18} /> {t('settings.language')}</span>
+              <Segmented value={prefs.lang} onChange={(v) => prefs.set({ lang: v })} options={[{ value: 'ru', label: 'Русский' }, { value: 'en', label: 'English' }]} />
+            </div>
+            <div className="set-col">
+              <span><Icon name="palette" size={18} /> {t('settings.theme')}</span>
+              <ThemePicker value={prefs.theme} onChange={(v) => prefs.set({ theme: v })} />
+            </div>
+            <div className="set-col">
+              <span><Icon name="ruler" size={18} /> {t('settings.units')}</span>
+              <Segmented value={prefs.units} onChange={(v) => prefs.set({ units: v })} options={[{ value: 'metric', label: t('settings.metric') }, { value: 'imperial', label: t('settings.imperial') }]} />
+            </div>
+          </div>
         </div>
-        <button className="btn primary block" onClick={() => (last ? finish() : setI(i + 1))}>
-          {last ? t('onb.start') : t('onb.next')} <Icon name="chevron-right" size={18} />
+      )}
+
+      {step.kind === 'me' && (
+        <div className="onb-form" key="me">
+          <div className="onb-text left">
+            <h1>{t(nickOnly ? 'onb.nick_only.title' : 'onb.me.title')}</h1>
+            <p>{t(nickOnly ? 'onb.nick_only.text' : 'onb.me.text')}</p>
+          </div>
+          <ProfileForm value={draft} onChange={(p) => setDraft({ ...draft, ...p })} showErrors={tried} />
+        </div>
+      )}
+
+      <div className="onb-foot">
+        {!nickOnly && (
+          <div className="dots">
+            {STEPS.map((_, k) => (
+              <i key={k} className={k === i ? 'on' : ''} />
+            ))}
+          </div>
+        )}
+        <button
+          className="btn primary block"
+          aria-disabled={step.kind === 'me' && !nickOk}
+          onClick={() => (step.kind === 'me' ? finish() : setI(i + 1))}
+        >
+          {step.kind === 'me' ? t(nickOnly ? 'common.save' : 'onb.start') : t('onb.next')} <Icon name="chevron-right" size={18} />
         </button>
-        {last && <small className="muted center">{t('onb.perms')}</small>}
+        {step.kind === 'me' && !nickOk && <small className="muted center">{t('onb.need_nick')}</small>}
+        {step.kind === 'me' && nickOk && !nickOnly && <small className="muted center">{t('onb.perms')}</small>}
       </div>
     </div>
   );

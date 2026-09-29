@@ -39,6 +39,26 @@ npm run android:apk     # debug APK: android/app/build/outputs/apk/debug/app-deb
 
 Release: create a keystore (`keytool -genkey -v -keystore travelopenmap.jks -keyalg RSA -keysize 2048 -validity 10000 -alias tom`), then *Build → Generate Signed Bundle / APK*. Keep keys out of the repo. App id: `app.travelopenmap` (`capacitor.config.ts`).
 
+### Release build (test version)
+
+```bash
+npm run release:test        # APK signed with the test key + AAB + web archive → release/
+npm run release:web         # web only (zip of dist/)
+npm run release:android     # Android signed with your key; unsigned APK if none
+```
+
+Output goes to `release/`: `TravelOpenMap-<version>-test-release.apk`, `…-release.aab`, `…-web.zip`, `SHA256SUMS.txt`. The version comes from `package.json` (`0.4.0` → versionName `0.4.0`, versionCode `400`).
+
+* **Test key.** `android/keystore/tom-test.jks` is in the repo with public passwords (`android/keystore/test.properties`) so test APKs can be installed over each other. **Never use it for Google Play or public releases.**
+* **Your key.** `keytool -genkeypair -v -keystore my.jks -alias tom -keyalg RSA -keysize 2048 -validity 10000`, then create `android/keystore.properties` (git-ignored) with `storeFile`, `storePassword`, `keyAlias`, `keyPassword`, or set `TOM_KEYSTORE_FILE`, `TOM_KEYSTORE_PASSWORD`, `TOM_KEY_ALIAS`, `TOM_KEY_PASSWORD`; then `npm run release:android`.
+* **Requirements:** JDK 21, Android SDK (`ANDROID_HOME`), access to Google Maven and Maven Central.
+* **GitHub Actions.** [`.github/workflows/release-test.yml`](.github/workflows/release-test.yml) builds the same on GitHub (push to `claude/**`, `v*` tags, or manually) and publishes a **pre-release** with the APK, AAB, web archive and checksums.
+* iOS releases need macOS and Xcode (*Product → Archive*) with your Apple account; there is no test iOS build.
+
+### Running without Google Play Services
+
+The app uses no Google Maps, Firebase or other Google services. Location: the native plugin is called with `enableLocationFallback: true` (falls back to the system `LocationManager` when Play Services are missing); if it errors for a reason other than denied permission, the app falls back to the system WebView's Geolocation API. Devices without Google only need Android System WebView. Not verified on a real device without Play Services.
+
 `INTERNET` is **added by default** (`npm run cap:sync` does it) — it is needed only for the optional, off-by-default country-map download. Everything else in the app still cannot open external connections (CSP). For a strict build where the OS itself forbids network access run `node scripts/configure-native.mjs --offline-only` (country download becomes unavailable; add maps by file). `npm run cap:sync` restores the default.
 
 ## 5. iOS (macOS only)

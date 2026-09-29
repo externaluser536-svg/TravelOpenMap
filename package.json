@@ -1,6 +1,6 @@
 {
   "name": "travelopenmap",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "private": true,
   "description": "TravelOpenMap — офлайн-дневник путешествий с туманом войны на картах OpenStreetMap",
   "license": "MIT",
@@ -20,6 +20,10 @@
     "android": "npm run cap:sync && npx cap open android",
     "ios": "npm run cap:sync && npx cap open ios",
     "android:apk": "npm run cap:sync && cd android && ./gradlew assembleDebug",
+    "release": "node scripts/release.mjs",
+    "release:web": "node scripts/release.mjs --web",
+    "release:android": "node scripts/release.mjs --android",
+    "release:test": "node scripts/release.mjs --test-key",
     "icons": "node scripts/make-icons.mjs && npx capacitor-assets generate",
     "test:all": "npm run typecheck && npm test && npm run test:e2e"
   },

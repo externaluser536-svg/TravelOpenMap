@@ -4,6 +4,30 @@ import { useT } from '../../i18n';
 import { Icon } from '../icons';
 import { Segmented, Sheet, Switch } from '../common';
 import { formatDistance } from '../../core/geo';
+import { useState } from 'react';
+import { ProfileForm, ThemePicker, type ProfileValue } from '../ProfileForm';
+import { checkNickname, normalizeNick } from '../../core/profile';
+
+/** Профиль в настройках: аватар, страна и вес применяются сразу, ник — когда он корректен. */
+function SettingsProfile() {
+  const p = usePrefs();
+  const [nick, setNick] = useState(p.nickname);
+  const value: ProfileValue = { nickname: nick, avatarIcon: p.avatarIcon, avatarColor: p.avatarColor, homeCountry: p.homeCountry, weightKg: p.weightKg };
+  return (
+    <ProfileForm
+      value={value}
+      showErrors
+      onChange={(patch) => {
+        const { nickname, ...rest } = patch;
+        if (nickname !== undefined) {
+          setNick(nickname);
+          if (checkNickname(nickname) === 'ok') p.set({ nickname: normalizeNick(nickname) });
+        }
+        if (Object.keys(rest).length) p.set(rest);
+      }}
+    />
+  );
+}
 
 export function SettingsSheet() {
   const { t, lang } = useT();
@@ -13,20 +37,16 @@ export function SettingsSheet() {
   return (
     <Sheet tall title={t('settings.title')} onClose={() => patch({ sheet: null })}>
       <div className="form settings">
+        <h4 className="sect-sm">{t('settings.profile')}</h4>
+        <SettingsProfile />
+
         <h4 className="sect-sm">{t('settings.appearance')}</h4>
-        <div className="set-row">
+        <div className="set-col">
           <span>
             <Icon name="palette" size={18} /> {t('settings.theme')}
           </span>
-          <Segmented
-            value={p.theme}
-            onChange={(v) => p.set({ theme: v })}
-            options={[
-              { value: 'auto', label: t('settings.theme_auto') },
-              { value: 'light', label: <Icon name="sun" size={15} /> },
-              { value: 'dark', label: <Icon name="moon" size={15} /> },
-            ]}
-          />
+          <ThemePicker value={p.theme} onChange={(v) => p.set({ theme: v })} />
+          <small className="muted">{t('settings.theme_hint')}</small>
         </div>
         <div className="set-row">
           <span>

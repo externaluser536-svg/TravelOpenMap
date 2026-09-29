@@ -4,6 +4,7 @@ import { AttributionControl, Map as MlMap, Marker, type GeoJSONSource } from 'ma
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { useApp } from '../state/store';
 import { usePrefs, resolveTheme } from '../state/prefs';
+import { useResolvedTheme } from '../ui/hooks';
 import { engine } from '../state/engine';
 import { FogRenderer } from './fog-renderer';
 import { NoteClusters, categoryRing, type ClusterItem } from './clusters';
@@ -97,7 +98,6 @@ export function MapView() {
 
   const mapInfo = useApp((s) => s.mapInfo);
   const lang = usePrefs((s) => s.lang);
-  const themePref = usePrefs((s) => s.theme);
   const units = usePrefs((s) => s.units);
   const notes = useApp((s) => s.notes);
   const peek = useApp((s) => s.peek);
@@ -118,7 +118,7 @@ export function MapView() {
   const training = useApp((s) => s.workoutLive !== null);
   const workoutRoute = useApp((s) => s.workoutRoute);
   const zones = usePrefs((s) => s.zones);
-  const theme = resolveTheme(themePref);
+  const theme = useResolvedTheme();
 
   // ---------------------------------------------------------------- создание карты
   useEffect(() => {
