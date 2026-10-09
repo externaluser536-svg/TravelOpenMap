@@ -128,7 +128,7 @@ try {
   await page.evaluate(() => document.querySelector('.page-scroll').scrollTo(0, 99999));
   await page.locator('.card.list .row').nth(1).click(); // «Офлайн-карты»
   await page.waitForSelector('.sheet');
-  await page.locator('.sheet .btn.primary.block').click(); // «Выбрать страну»
+  await page.locator('.sheet .btn.primary.block').last().click(); // «Выбрать страну»
   await page.fill('.picker .search input', 'Монако');
   await page.locator('.country-row').first().click();
   await page.locator('.detail-card').nth(1).click(); // «Города»

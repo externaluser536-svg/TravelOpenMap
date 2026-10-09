@@ -170,7 +170,7 @@ try {
   await scrollDown();
   await page.locator('.card.list .row').nth(1).click(); // «Офлайн-карты»
   await page.waitForTimeout(400);
-  await page.locator('.sheet .btn.primary').first().click(); // «Выбрать страну»
+  await page.locator('.sheet .btn.primary').last().click(); // «Выбрать страну» (выше — «карта района, где я»)
   await page.waitForTimeout(600);
   await page.fill('.picker .search input', 'Порту');
   await page.locator('.country-row').first().click();
