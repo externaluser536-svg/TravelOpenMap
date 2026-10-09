@@ -211,7 +211,9 @@ try {
   check(local.some((u) => u.endsWith('maps/monaco.pmtiles')), 'карта читается из локального monaco.pmtiles');
   check(local.some((u) => u.includes('map-assets/fonts/')), 'шрифты карты — локальные');
   check(local.some((u) => u.includes('map-assets/sprites/')), 'спрайты карты — локальные');
-  check(failedReqs.filter((u) => !u.includes('example.com')).length === 0, 'нет неудавшихся запросов', failedReqs.slice(0, 3).join(', '));
+  // ERR_ABORTED — карта сама отменяет запросы тайлов, которые уже не нужны (перелёт, смена масштаба): это не сбой
+  const realFails = failedReqs.filter((u) => !u.includes('example.com') && !/ERR_ABORTED/.test(u));
+  check(realFails.length === 0, 'нет неудавшихся запросов', realFails.slice(0, 3).join(', '));
   console.log(`\nВсего запросов: ${requests.length}; локальных: ${local.length}; внешних (не считая зондов): ${real.length}`);
 
   // 6) после знакомства спрашиваем про онлайн-карту — и не выходим в сеть, пока пользователь не согласился
