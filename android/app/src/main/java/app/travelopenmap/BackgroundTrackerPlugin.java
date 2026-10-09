@@ -1,7 +1,12 @@
 package app.travelopenmap;
 
 import android.Manifest;
+import android.content.Context;
+import android.content.Intent;
+import android.location.LocationManager;
 import android.os.Build;
+import android.os.PowerManager;
+import android.provider.Settings;
 
 import com.getcapacitor.JSArray;
 import com.getcapacitor.JSObject;
@@ -45,6 +50,12 @@ public class BackgroundTrackerPlugin extends Plugin {
     }
 
     @Override
+    protected void handleOnDestroy() {
+        // окно закрыто: служба продолжает писать, точки копятся в очереди до следующего открытия
+        TrackingService.setSinkActive(false);
+    }
+
+    @Override
     protected void handleOnPause() {
         // приложение свернули — веб-часть засыпает, точки снова копятся в очереди
         TrackingService.setSinkActive(false);
@@ -83,11 +94,20 @@ public class BackgroundTrackerPlugin extends Plugin {
     }
 
     private void launch(PluginCall call) {
-        String title = call.getString("title", "TravelOpenMap");
-        String text = call.getString("text", "");
-        String stopLabel = call.getString("stopLabel", "Stop");
+        JSONObject labels = new JSONObject();
         try {
-            TrackingService.start(getContext(), title, text, stopLabel);
+            // тексты уведомления приходят из интерфейса, чтобы совпадали с языком приложения
+            for (String k : new String[]{"title", "text", "stop", "searching", "channel", "u1", "u2"}) {
+                String v = call.getString(k);
+                if (v != null) labels.put(k, v);
+            }
+            labels.put("imperial", Boolean.TRUE.equals(call.getBoolean("imperial", false)));
+        } catch (JSONException e) {
+            call.reject("bad-labels", e);
+            return;
+        }
+        try {
+            TrackingService.start(getContext(), labels);
         } catch (RuntimeException e) {
             call.reject("start-failed", e);
             return;
@@ -120,6 +140,63 @@ public class BackgroundTrackerPlugin extends Plugin {
         r.put("fixes", fixes);
         r.put("running", TrackingService.isRunning());
         call.resolve(r);
+    }
+
+    /** Исключено ли приложение из оптимизации батареи (иначе часть телефонов усыпляет фоновую запись). */
+    @PluginMethod
+    public void batteryStatus(PluginCall call) {
+        JSObject r = new JSObject();
+        boolean ignoring = true;
+        if (Build.VERSION.SDK_INT >= 23) {
+            PowerManager pm = (PowerManager) getContext().getSystemService(Context.POWER_SERVICE);
+            ignoring = pm == null || pm.isIgnoringBatteryOptimizations(getContext().getPackageName());
+        }
+        r.put("ignoring", ignoring);
+        call.resolve(r);
+    }
+
+    /** Открывает системный экран «Оптимизация батареи» (не требует особого разрешения). */
+    @PluginMethod
+    public void openBatterySettings(PluginCall call) {
+        try {
+            Intent i = new Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            getContext().startActivity(i);
+            call.resolve();
+        } catch (RuntimeException e) {
+            try {
+                Intent i = new Intent(Settings.ACTION_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                getContext().startActivity(i);
+                call.resolve();
+            } catch (RuntimeException e2) {
+                call.reject("no-settings", e2);
+            }
+        }
+    }
+
+    /** Включён ли GPS в настройках телефона: без этого сигнала не будет совсем. */
+    @PluginMethod
+    public void gpsState(PluginCall call) {
+        JSObject r = new JSObject();
+        boolean enabled = true;
+        try {
+            LocationManager lm = (LocationManager) getContext().getSystemService(Context.LOCATION_SERVICE);
+            enabled = lm != null && (lm.isProviderEnabled(LocationManager.GPS_PROVIDER) || lm.isProviderEnabled(LocationManager.NETWORK_PROVIDER));
+        } catch (RuntimeException ignored) {
+            // не удалось узнать — не пугаем пользователя
+        }
+        r.put("enabled", enabled);
+        call.resolve(r);
+    }
+
+    /** Открывает системные настройки геолокации. */
+    @PluginMethod
+    public void openLocationSettings(PluginCall call) {
+        try {
+            getContext().startActivity(new Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
+            call.resolve();
+        } catch (RuntimeException e) {
+            call.reject("no-settings", e);
+        }
     }
 
     @PluginMethod

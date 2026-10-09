@@ -10,7 +10,9 @@ import { polygonAreaM2 } from '../core/fogedit';
 import type { FogDraft } from '../state/store';
 import { cardinal, formatArea, formatCoords, formatDistance, haversine, pathLength } from '../core/geo';
 import { startLocation } from '../services/location';
+import { BackgroundTracker } from '../services/background';
 import { WorkoutPanel } from './pages/WorkoutPage';
+import { PlaceCard } from './PlaceCard';
 import { tap } from '../services/haptics';
 
 export function Hud() {
@@ -31,14 +33,23 @@ export function Hud() {
   const orient = useApp((s) => s.orientMap);
   const training = useApp((s) => s.workoutLive !== null);
   const fogTool = useApp((s) => s.fogDraft?.tool);
+  const place = useApp((s) => s.place);
+  const bgOn = usePrefs((s) => s.backgroundTracking);
+  const gpsAcc = useApp((s) => s.gpsAcc);
+  const minAcc = usePrefs((s) => s.minAccuracy);
 
   const banner = (() => {
     if (mode !== 'normal' || training) return null;
     if (gps === 'denied')
       return { icon: 'locate-off', text: t('gps.denied'), tone: 'warn', action: { label: t('gps.retry'), run: () => void startLocation() } };
+    if (gps === 'disabled')
+      return { icon: 'locate-off', text: t('gps.disabled'), tone: 'warn', action: { label: t('gps.enable'), run: () => void BackgroundTracker.openLocationSettings() } };
     if (inZone) return { icon: 'shield', text: t('gps.in_zone'), tone: 'warn' };
     if (gps === 'searching') return { icon: 'locate', text: t('gps.searching'), tone: 'info' };
-    if (gps === 'weak') return { icon: 'locate', text: t('gps.weak'), tone: 'warn' };
+    if (gps === 'weak') {
+      const relax = minAcc < 200 ? { label: t('gps.relax'), run: () => usePrefs.getState().set({ minAccuracy: 200 }) } : undefined;
+      return { icon: 'locate', text: t('gps.weak', { acc: gpsAcc ?? '?', need: minAcc }), tone: 'warn', action: relax };
+    }
     if (missing && mapInfo)
       return { icon: 'map', text: t('map.missing'), tone: 'info', action: { label: t('map.go'), run: () => patch({ fitBounds: { bounds: mapInfo.bounds, nonce: Date.now() } }) } };
     if (peek) return { icon: 'eye', text: t('hud.peek_on'), tone: 'info', action: { label: t('hud.peek_off'), run: togglePeek } };
@@ -82,6 +93,12 @@ export function Hud() {
         </div>
       )}
 
+      {!banner && bgOn && mode === 'normal' && !training && gps !== 'denied' && gps !== 'unavailable' && (
+        <button className="rec-chip glass" onClick={() => patch({ sheet: { type: 'settings' } })} aria-label={t('bg.title')}>
+          <i /> {t('bg.rec')}
+        </button>
+      )}
+
       <div className={`fab-col ${training ? 'raised' : mode === 'measure' ? 'raised' : mode === 'normal' ? '' : 'hidden'}`}>
         {Math.abs(bearing) > 1 && !orient && (
           <button className="fab glass" onClick={() => { tap(); mapApi.resetNorth(); }} aria-label={t('hud.north')}>
@@ -106,7 +123,7 @@ export function Hud() {
       </div>
 
       {training && <WorkoutPanel />}
-      {mode === 'normal' && !training && (
+      {mode === 'normal' && !training && !place && (
         <div className="stat-pill glass" data-tour="stats">
           <span>
             <Icon name="map" size={14} />
@@ -131,6 +148,7 @@ export function Hud() {
       {mode === 'fogedit' && fogTool === 'circle' && <Crosshair fog />}
       {mode === 'fogedit' && <FogEditPanel />}
       <MapMenuView />
+      <PlaceCard />
       {mode === 'pick' && <PickPanel />}
       {mode === 'zone' && <ZonePanel />}
     </div>

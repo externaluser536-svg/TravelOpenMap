@@ -28,8 +28,8 @@ const server = await startPreview(join(ROOT, 'dist-demo'), PORT);
 const browser = await launch();
 await mkdir(OUT, { recursive: true });
 
-async function session({ theme, lang, onboarded = true, prompted = true, tutorial = true, prefs = {}, mock = false }) {
-  const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, locale: lang === 'ru' ? 'ru-RU' : 'en-GB', colorScheme: theme });
+async function session({ theme, lang, onboarded = true, prompted = true, tutorial = true, prefs = {}, mock = false, geo = null }) {
+  const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, locale: lang === 'ru' ? 'ru-RU' : 'en-GB', colorScheme: theme, ...(geo ? { geolocation: geo, permissions: ['geolocation'] } : {}) });
   if (mock) await mockOnline(ctx);
   const page = await ctx.newPage();
   page.on('pageerror', (e) => console.error('[pageerror]', e.message));
@@ -42,7 +42,7 @@ async function session({ theme, lang, onboarded = true, prompted = true, tutoria
       ),
     [lang, onboarded, prompted, tutorial, prefs],
   );
-  await page.goto(server.url);
+  await page.goto(geo ? `${server.url}?gps` : server.url);
   await page.waitForSelector('[data-map-ready="1"]', { timeout: 60000 });
   return { ctx, page };
 }
@@ -299,6 +299,18 @@ async function onlineScenes(lang) {
   await page.waitForSelector('.layer-row');
   await shot(page, dir, '41-layers')();
   await closeSheet(page);
+  // нажатие на место: что это
+  await page.evaluate(() => window.__map.jumpTo({ center: [7.4181, 43.7386], zoom: 16.2 }));
+  await page.waitForTimeout(3500);
+  const bk = await page.evaluate(() => window.__map.project([7.418, 43.7385]));
+  await page.mouse.click(bk.x, bk.y);
+  await page.waitForSelector('.place-card', { timeout: 8000 });
+  await shot(page, dir, '43-place-card')();
+  await page.locator('.place-card .icon-btn').click();
+  // слабый GPS: баннер с погрешностью
+  await page.evaluate(() => window.__tom.useApp.getState().patch({ gps: 'weak', gpsAcc: 140 }));
+  await shot(page, dir, '44-weak-gps')();
+  await page.evaluate(() => window.__tom.useApp.getState().patch({ gps: 'ok', gpsAcc: 8 }));
   await tab(page, 'profile'); await page.waitForTimeout(400);
   await scrollPage(page, 99999);
   await click(page, '.card.list .row', 1); await page.waitForTimeout(800);
@@ -310,6 +322,15 @@ async function onlineScenes(lang) {
   await page.waitForTimeout(500);
   await shot(page, dir, '34-area-prompt')();
   await ctx.close();
+  // первый запуск с GPS: после первой точки — карточка «сохранить карту района», затем предложение записи в фоне
+  const gps = await session({ theme: 'dark', lang, mock: true, geo: { latitude: 43.7384, longitude: 7.4246, accuracy: 10 }, prefs: { onlineMaps: true, askAreaPrompts: true } });
+  await gps.page.waitForSelector('.area-prompt', { timeout: 20000 });
+  await gps.page.waitForTimeout(1500);
+  await shot(gps.page, dir, '45-here-card')();
+  await gps.page.evaluate(() => window.__tom.useApp.getState().patch({ downloadPrompt: null, bgOffer: true }));
+  await gps.page.waitForSelector('.download-modal');
+  await shot(gps.page, dir, '46-bg-offer')();
+  await gps.ctx.close();
   // согласие перед сохранением: онлайн-режим ещё выключен
   const off = await session({ theme: 'dark', lang });
   await off.page.evaluate(() => window.__tom.useApp.getState().patch({ downloadPrompt: { kind: 'consent', job: { id: 'FR:city', name: 'France', bbox: [-5, 42, 8, 51], maxZoom: 11, dem: false, estimate: 240e6, fly: { lng: 2.35, lat: 46.6, zoom: 5 } } } }));
@@ -370,6 +391,14 @@ try {
     ['ru-dark/40-online-map.png', 'Карта подгружается сама'], ['ru-dark/41-layers.png', 'Слои: метро, отдых, высоты'], ['ru-dark/31-fog-open.png', 'Кисть: закрасьте — туман уйдёт'],
     ['ru-dark/36-tour-offer.png', 'Обучение — по желанию'], ['ru-dark/37-tour-fogedit.png', 'Подсказки по интерфейсу'],
   ], 'TravelOpenMap 0.6', 'Онлайн-карта OpenFreeMap · слои · кисть тумана · запись в фоне · обучение');
+  await sheet('overview-ru-7.png', [
+    ['ru-dark/43-place-card.png', 'Что за место: нажмите на карту'], ['ru-dark/45-here-card.png', 'После GPS: карта района, где вы'], ['ru-dark/44-weak-gps.png', 'Слабый GPS: видно погрешность'],
+    ['ru-dark/46-bg-offer.png', 'Запись маршрута при закрытом приложении'],
+  ], 'TravelOpenMap 0.7', 'Карточка места · карта района после GPS · слабый сигнал · запись в фоне');
+  await sheet('overview-en-7.png', [
+    ['en-dark/43-place-card.png', 'What is this place: tap the map'], ['en-dark/45-here-card.png', 'After GPS: map of your area'], ['en-dark/44-weak-gps.png', 'Weak GPS: see the error'],
+    ['en-dark/46-bg-offer.png', 'Record while the app is closed'],
+  ], 'TravelOpenMap 0.7', 'Place card · area map after GPS · weak signal · background tracking');
   await sheet('overview-ru-6b.png', [
     ['ru-dark/33-online-prompt.png', 'Онлайн-карта — по вашему согласию'], ['ru-dark/34-area-prompt.png', 'Сохранить область для офлайна'], ['ru-dark/35-consent.png', 'Согласие перед загрузкой'],
     ['ru-dark/42-maps.png', 'Сохранённые области и кэш'],

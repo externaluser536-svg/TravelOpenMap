@@ -6,16 +6,21 @@ import { PROMPT_MIN_ZOOM, planArea } from '../core/regions';
 import { isSaved } from '../map/offline-areas';
 import { usePrefs } from './prefs';
 import { useApp } from './store';
-import { areaJob } from './downloads';
+import { areaJob, hereJob } from './downloads';
+import { backgroundSupported } from '../services/background';
 
 const AREA_DELAY_MS = 1200;
 const ONLINE_DELAY_MS = 1500;
+const HERE_DELAY_MS = 2000;
 
 /** Области, о которых уже спрашивали в этой сессии («Позже» не значит «никогда»). */
 const shownThisSession = new Set<string>();
 let areaTimer = 0;
 let onlineTimer = 0;
 let tourTimer = 0;
+let hereTimer = 0;
+let bgTimer = 0;
+let hereOffered = false;
 
 const TOUR_DELAY_MS = 1200;
 
@@ -63,6 +68,7 @@ function idle(): boolean {
     !app.levelUp &&
     !app.tour &&
     !app.tourOffer &&
+    !app.bgOffer &&
     app.workoutLive === null &&
     app.download?.state !== 'running'
   );
@@ -81,11 +87,47 @@ function checkOnline(): void {
   }, ONLINE_DELAY_MS);
 }
 
+/** Когда GPS заработал — предлагаем писать маршрут и при закрытом приложении (Android). Один раз. */
+function checkBackground(): void {
+  const prefs = usePrefs.getState();
+  const app = useApp.getState();
+  if (bgTimer || prefs.backgroundPrompted || !prefs.onlinePrompted || !backgroundSupported()) return;
+  if (!app.position || app.bgOffer || app.downloadPrompt || !idle()) return;
+  bgTimer = window.setTimeout(() => {
+    bgTimer = 0;
+    const a = useApp.getState();
+    if (usePrefs.getState().backgroundPrompted || !a.position || a.bgOffer || a.downloadPrompt || !idle()) return;
+    a.patch({ bgOffer: true });
+  }, 2500);
+}
+
+/** Когда определилось ваше положение — сразу предлагаем сохранить карту района, где вы находитесь. */
+function checkHere(): void {
+  const prefs = usePrefs.getState();
+  const app = useApp.getState();
+  if (hereOffered || hereTimer || !app.position || !prefs.onlineMaps || !prefs.askAreaPrompts) return;
+  if (!idle() || app.downloadPrompt) return;
+  hereTimer = window.setTimeout(() => {
+    hereTimer = 0;
+    const a = useApp.getState();
+    const p = usePrefs.getState();
+    if (hereOffered || !a.position || !p.onlineMaps || !p.askAreaPrompts || !idle() || a.downloadPrompt) return;
+    hereOffered = true;
+    if (isSaved(p.savedAreas, a.position.lng, a.position.lat)) return;
+    const { job, key } = hereJob(a.position);
+    if (p.dismissedAreas.includes(key)) return;
+    shownThisSession.add(key);
+    a.patch({ downloadPrompt: { kind: 'area', job, title: job.name, dismissKey: key } });
+  }, HERE_DELAY_MS);
+}
+
 /** Запускается один раз: следит за состоянием и вовремя показывает вопрос про онлайн-карту. */
 export function startPromptWatchers(): () => void {
   const check = () => {
     checkTour();
     checkOnline();
+    checkHere();
+    checkBackground();
   };
   const offApp = useApp.subscribe(check);
   const offPrefs = usePrefs.subscribe(check);
@@ -95,6 +137,8 @@ export function startPromptWatchers(): () => void {
     offPrefs();
     clearTimeout(onlineTimer);
     clearTimeout(tourTimer);
+    clearTimeout(hereTimer);
+    clearTimeout(bgTimer);
     clearTimeout(areaTimer);
   };
 }
@@ -127,4 +171,5 @@ export function runAreaCheck(at: { lng: number; lat: number; zoom: number }): vo
 /** Для тестов. */
 export function resetPromptSession(): void {
   shownThisSession.clear();
+  hereOffered = false;
 }

@@ -72,6 +72,28 @@ try {
   const roads = await page.evaluate(() => window.__map.queryRenderedFeatures({ layers: ['road-major', 'road-tertiary', 'road-minor'] }).length);
   check(roads > 0, 'дороги онлайн-карты отрисованы', `${roads} объектов`);
 
+  // 2б) нажатие на место: что это — по данным карты
+  await page.evaluate(() => window.__map.jumpTo({ center: [7.4181, 43.7386], zoom: 16.2 }));
+  await page.waitForTimeout(3500);
+  const px = await page.evaluate(() => {
+    const p = window.__map.project([7.418, 43.7385]);
+    return { x: p.x, y: p.y };
+  });
+  await page.mouse.click(px.x, px.y);
+  await page.waitForSelector('.place-card', { timeout: 8000 }).catch(() => {});
+  const cardTitle = (await page.locator('.place-card .pc-title b').count()) ? await page.locator('.place-card .pc-title b').innerText() : '';
+  const cardSub = (await page.locator('.place-card .pc-title small').count()) ? await page.locator('.place-card .pc-title small').innerText() : '';
+  check(cardTitle === 'Boulangerie', 'нажатие на место показывает его название из данных карты', cardTitle || 'карточки нет');
+  check(/Пекарня/.test(cardSub), 'и тип места по-русски', cardSub);
+  await page.locator('.place-card .icon-btn').click();
+  check((await page.locator('.place-card').count()) === 0, 'карточка закрывается');
+  await page.mouse.click(12, 400); // пустое место: карточка с координатами и подсказкой
+  await page.waitForSelector('.place-card', { timeout: 5000 }).catch(() => {});
+  check((await page.locator('.place-card').count()) === 1, 'нажатие на пустое место тоже даёт карточку (координаты, действия)');
+  await page.locator('.place-card .icon-btn').click();
+  await page.evaluate(() => window.__map.jumpTo({ center: [7.4205, 43.7425], zoom: 15.3 }));
+  await page.waitForTimeout(1500);
+
   // 3) слои карты через интерфейс
   await page.locator('.fab[data-tour="layers"]').click();
   await page.waitForSelector('.layer-row');
@@ -160,6 +182,40 @@ try {
   await page2.waitForTimeout(2500);
   check(seen.length === n0, 'при выключенной онлайн-карте новых внешних запросов нет');
   console.log(`\nВнешних запросов по адресам: ${JSON.stringify(Object.fromEntries(hosts))}`);
+
+  // 8) первый запуск: карта не привязана к Монако, а после GPS предлагается карта района, где вы находитесь
+  const ctxNoGps = await browser.newContext({ viewport: { width: 390, height: 844 }, locale: 'ru-RU' });
+  await mockOnline(ctxNoGps);
+  const pg0 = await ctxNoGps.newPage();
+  await pg0.addInitScript(() => localStorage.setItem('tom.prefs.v1', JSON.stringify({ state: { onboarded: true, lang: 'ru', theme: 'dark', nickname: 'Тест', tutorialSeen: true, onlinePrompted: true }, version: 0 })));
+  await pg0.goto(server.url);
+  await pg0.waitForSelector('[data-map-ready="1"]', { timeout: 60000 });
+  const z0 = await pg0.evaluate(() => ({ z: window.__map.getZoom(), c: window.__map.getCenter() }));
+  check(z0.z < 4 && !(Math.abs(z0.c.lng - 7.42) < 1 && Math.abs(z0.c.lat - 43.74) < 1), 'без положения карта открывается на мировом виде, а не на Монако', `zoom ${z0.z.toFixed(1)}`);
+  await ctxNoGps.close();
+
+  const ctxGps = await browser.newContext({
+    viewport: { width: 390, height: 844 },
+    locale: 'ru-RU',
+    geolocation: { latitude: 43.7384, longitude: 7.4246, accuracy: 12 },
+    permissions: ['geolocation'],
+  });
+  await mockOnline(ctxGps);
+  const pg1 = await ctxGps.newPage();
+  await pg1.addInitScript(() => localStorage.setItem('tom.prefs.v1', JSON.stringify({ state: { onboarded: true, lang: 'ru', theme: 'dark', nickname: 'Тест', tutorialSeen: true }, version: 0 })));
+  await pg1.goto(`${server.url}?gps`);
+  await pg1.waitForSelector('.download-modal', { timeout: 20000 });
+  await pg1.locator('.download-modal .btn.primary').click(); // разрешаем онлайн-карту
+  await pg1.waitForSelector('.area-prompt', { timeout: 20000 }).catch(() => {});
+  const hereText = (await pg1.locator('.area-prompt').count()) ? await pg1.locator('.area-prompt').first().innerText() : '';
+  check(/Монако/.test(hereText), 'после GPS предлагается сохранить карту района, где вы находитесь', hereText.replace(/\n/g, ' ').slice(0, 70));
+  const zNow = await pg1.evaluate(() => window.__map.getZoom());
+  check(zNow > 12, 'карта сама перелетела к вашему положению', `zoom ${zNow.toFixed(1)}`);
+  await pg1.locator('.area-prompt .btn.primary').click();
+  await pg1.waitForFunction(() => JSON.parse(localStorage.getItem('tom.prefs.v1')).state.savedAreas?.length > 0, null, { timeout: 60000 }).catch(() => {});
+  const savedHere = await pg1.evaluate(() => JSON.parse(localStorage.getItem('tom.prefs.v1')).state.savedAreas ?? []);
+  check(savedHere.length === 1, 'область «здесь» сохраняется одним нажатием', savedHere[0]?.name ?? '');
+  await ctxGps.close();
 } finally {
   await browser.close();
   server.stop();

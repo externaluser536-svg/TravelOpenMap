@@ -16,8 +16,11 @@ import android.location.LocationListener;
 import android.location.LocationManager;
 import android.os.Build;
 import android.os.Bundle;
+import android.os.Handler;
 import android.os.IBinder;
 import android.os.Looper;
+import android.os.SystemClock;
+import android.widget.RemoteViews;
 
 import androidx.annotation.Nullable;
 import androidx.core.app.NotificationCompat;
@@ -36,27 +39,40 @@ import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 
 /**
- * Служба переднего плана, которая пишет положение, пока приложение свёрнуто или экран погашен.
+ * Служба переднего плана, которая пишет положение, пока приложение свёрнуто, закрыто или экран погашен.
  * Использует системный LocationManager (GPS), поэтому не зависит от сервисов Google Play.
  *
- * Пока экран приложения открыт, точки уходят сразу в веб-часть (слушатель sink). Когда приложение свёрнуто,
+ * Пока экран приложения открыт, точки уходят сразу в веб-часть (слушатель sink). Когда приложение свёрнуто или закрыто,
  * точки складываются в файл-очередь во внутреннем хранилище; при возвращении веб-часть забирает их одной
  * операцией drain() и по порядку проигрывает в движок тумана.
+ *
+ * Уведомление живое: время записи, пройденный путь и точность GPS обновляются прямо в шторке.
  */
 public class TrackingService extends Service implements LocationListener {
     public static final String ACTION_START = "app.travelopenmap.track.START";
     public static final String ACTION_STOP = "app.travelopenmap.track.STOP";
-    static final String EXTRA_TITLE = "title";
-    static final String EXTRA_TEXT = "text";
-    static final String EXTRA_STOP = "stopLabel";
 
     private static final String CHANNEL_ID = "tracking";
     private static final int NOTIFICATION_ID = 4711;
     private static final String PREFS = "tom.tracking";
+    private static final String KEY_ON = "on";
+    private static final String KEY_LABELS = "labels";
+    private static final String KEY_SINCE = "since";
+    private static final String KEY_DIST = "dist";
     private static final String QUEUE_FILE = "track-queue.jsonl";
     private static final long QUEUE_LIMIT_BYTES = 8L * 1024 * 1024;
+    private static final long REFRESH_MS = 5000L;
+    /** Дольше этого без точки считаем, что сигнал потерян. */
+    private static final long STALE_MS = 45_000L;
+    /** В пройденный путь идут только точные точки и разумные шаги (без скачков). */
+    private static final float DIST_MAX_ACCURACY = 50f;
+    private static final float DIST_MAX_STEP = 300f;
+    private static final float DIST_MIN_STEP = 3f;
+    /** Сетевые точки учитываются, только если GPS молчит дольше этого. */
+    private static final long GPS_QUIET_MS = 60_000L;
 
     /** Приёмник точек веб-части. Не null, только пока приложение на экране. */
     public interface Sink {
@@ -69,6 +85,24 @@ public class TrackingService extends Service implements LocationListener {
     private static volatile boolean running;
 
     private LocationManager manager;
+    private final Handler handler = new Handler(Looper.getMainLooper());
+    private JSONObject labels = new JSONObject();
+    private long sinceElapsed;
+    private float distance;
+    private boolean stateLoaded;
+    private long lastFixAt;
+    private long lastGpsAt;
+    private float lastAcc = -1f;
+    private Location lastLoc;
+    private final Runnable refresh = new Runnable() {
+        @Override
+        public void run() {
+            if (!running) return;
+            getSharedPreferences(PREFS, MODE_PRIVATE).edit().putFloat(KEY_DIST, distance).apply();
+            updateNotification();
+            handler.postDelayed(this, REFRESH_MS);
+        }
+    };
 
     public static boolean isRunning() {
         return running;
@@ -110,25 +144,25 @@ public class TrackingService extends Service implements LocationListener {
     }
 
     static boolean wasRequested(Context ctx) {
-        return ctx.getSharedPreferences(PREFS, MODE_PRIVATE).getBoolean("on", false);
+        return ctx.getSharedPreferences(PREFS, MODE_PRIVATE).getBoolean(KEY_ON, false);
     }
 
-    private static void remember(Context ctx, boolean on, @Nullable String title, @Nullable String text, @Nullable String stopLabel) {
-        SharedPreferences.Editor e = ctx.getSharedPreferences(PREFS, MODE_PRIVATE).edit().putBoolean("on", on);
-        if (title != null) e.putString(EXTRA_TITLE, title);
-        if (text != null) e.putString(EXTRA_TEXT, text);
-        if (stopLabel != null) e.putString(EXTRA_STOP, stopLabel);
+    private static void setOn(Context ctx, boolean on) {
+        ctx.getSharedPreferences(PREFS, MODE_PRIVATE).edit().putBoolean(KEY_ON, on).apply();
+    }
+
+    static void start(Context ctx, JSONObject labels) {
+        SharedPreferences.Editor e = ctx.getSharedPreferences(PREFS, MODE_PRIVATE).edit();
+        e.putBoolean(KEY_ON, true).putString(KEY_LABELS, labels.toString());
+        // счётчики идут от первого запуска записи; повторное включение уведомления их не обнуляет
+        if (!running) e.putLong(KEY_SINCE, System.currentTimeMillis()).putFloat(KEY_DIST, 0f);
         e.apply();
-    }
-
-    static void start(Context ctx, String title, String text, String stopLabel) {
-        remember(ctx, true, title, text, stopLabel);
         Intent i = new Intent(ctx, TrackingService.class).setAction(ACTION_START);
         ContextCompat.startForegroundService(ctx, i);
     }
 
     static void stop(Context ctx) {
-        remember(ctx, false, null, null, null);
+        setOn(ctx, false);
         ctx.stopService(new Intent(ctx, TrackingService.class));
     }
 
@@ -137,20 +171,30 @@ public class TrackingService extends Service implements LocationListener {
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
         if (intent != null && ACTION_STOP.equals(intent.getAction())) {
-            remember(this, false, null, null, null);
+            setOn(this, false);
             stopSelf();
             return START_NOT_STICKY;
         }
         SharedPreferences p = getSharedPreferences(PREFS, MODE_PRIVATE);
         // intent == null: систему перезапустила службу после нехватки памяти; продолжаем, только если запись всё ещё включена
-        if (intent == null && !p.getBoolean("on", false)) {
+        if (intent == null && !p.getBoolean(KEY_ON, false)) {
             stopSelf();
             return START_NOT_STICKY;
         }
-        String title = p.getString(EXTRA_TITLE, "TravelOpenMap");
-        String text = p.getString(EXTRA_TEXT, "");
-        String stopLabel = p.getString(EXTRA_STOP, "Stop");
-        Notification n = buildNotification(title, text, stopLabel);
+        try {
+            labels = new JSONObject(p.getString(KEY_LABELS, "{}"));
+        } catch (JSONException e) {
+            labels = new JSONObject();
+        }
+        long sinceWall = p.getLong(KEY_SINCE, System.currentTimeMillis());
+        sinceElapsed = SystemClock.elapsedRealtime() - Math.max(0, System.currentTimeMillis() - sinceWall);
+        // путь берём из хранилища только при первом запуске экземпляра (после перезапуска системой);
+        // повторные команды start при уже идущей записи счётчик не сбрасывают
+        if (!stateLoaded) {
+            distance = p.getFloat(KEY_DIST, 0f);
+            stateLoaded = true;
+        }
+        Notification n = buildNotification();
         try {
             if (Build.VERSION.SDK_INT >= 29) {
                 ServiceCompat.startForeground(this, NOTIFICATION_ID, n, ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION);
@@ -159,25 +203,30 @@ public class TrackingService extends Service implements LocationListener {
             }
         } catch (RuntimeException e) {
             // например, система запретила запуск из фона: записывать нельзя
-            remember(this, false, null, null, null);
+            setOn(this, false);
             stopSelf();
             return START_NOT_STICKY;
         }
         running = true;
         subscribe();
+        handler.removeCallbacks(refresh);
+        handler.postDelayed(refresh, REFRESH_MS);
         return START_STICKY;
     }
 
     @Override
     public void onDestroy() {
         running = false;
+        handler.removeCallbacks(refresh);
         if (manager != null) {
             try {
                 manager.removeUpdates(this);
             } catch (SecurityException ignored) {
                 // разрешение отозвано — обновления уже остановлены
             }
+            manager = null;
         }
+        getSharedPreferences(PREFS, MODE_PRIVATE).edit().putFloat(KEY_DIST, distance).apply();
         super.onDestroy();
     }
 
@@ -190,28 +239,56 @@ public class TrackingService extends Service implements LocationListener {
     private void subscribe() {
         if (manager != null) return;
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
-            remember(this, false, null, null, null);
+            setOn(this, false);
             stopSelf();
             return;
         }
         manager = (LocationManager) getSystemService(Context.LOCATION_SERVICE);
         try {
-            if (manager.isProviderEnabled(LocationManager.GPS_PROVIDER)) {
-                manager.requestLocationUpdates(LocationManager.GPS_PROVIDER, 2000L, 0f, this, Looper.getMainLooper());
-            } else if (manager.isProviderEnabled(LocationManager.NETWORK_PROVIDER)) {
-                manager.requestLocationUpdates(LocationManager.NETWORK_PROVIDER, 5000L, 0f, this, Looper.getMainLooper());
+            // GPS подписываем всегда: если он сейчас выключен, обновления пойдут, как только его включат в настройках
+            manager.requestLocationUpdates(LocationManager.GPS_PROVIDER, 2000L, 0f, this, Looper.getMainLooper());
+            // сетевое положение — запасное, для помещений: в расчёт берётся, только пока GPS молчит (см. onLocationChanged)
+            if (manager.isProviderEnabled(LocationManager.NETWORK_PROVIDER)) {
+                manager.requestLocationUpdates(LocationManager.NETWORK_PROVIDER, 10_000L, 0f, this, Looper.getMainLooper());
             }
         } catch (SecurityException | IllegalArgumentException e) {
-            remember(this, false, null, null, null);
+            setOn(this, false);
             stopSelf();
         }
     }
 
-    private Notification buildNotification(String title, String text, String stopLabel) {
+    // ------------------------------------------------------------------ уведомление
+
+    private String label(String key, String fallback) {
+        return labels.optString(key, fallback);
+    }
+
+    private String formatDistance(float m) {
+        boolean imperial = labels.optBoolean("imperial", false);
+        if (imperial) {
+            double feet = m * 3.28084;
+            if (feet < 528) return String.format(Locale.US, "%d %s", Math.round(feet), label("u2", "ft"));
+            return String.format(Locale.US, "%.1f %s", m / 1609.344, label("u1", "mi"));
+        }
+        if (m < 1000) return String.format(Locale.US, "%d %s", Math.round(m), label("u2", "m"));
+        return String.format(Locale.US, "%.2f %s", m / 1000.0, label("u1", "km"));
+    }
+
+    private String statusText() {
+        long now = SystemClock.elapsedRealtime();
+        if (lastFixAt == 0 || now - lastFixAt > STALE_MS) return label("searching", "Searching for GPS…");
+        float accShown = labels.optBoolean("imperial", false) ? lastAcc * 3.28084f : lastAcc;
+        String acc = lastAcc >= 0 ? String.format(Locale.US, " · ±%d %s", Math.round(accShown), label("u2", "m")) : "";
+        return formatDistance(distance) + acc;
+    }
+
+    private Notification buildNotification() {
         NotificationManager nm = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
+        String title = label("title", "TravelOpenMap");
         if (Build.VERSION.SDK_INT >= 26 && nm != null && nm.getNotificationChannel(CHANNEL_ID) == null) {
-            NotificationChannel ch = new NotificationChannel(CHANNEL_ID, title, NotificationManager.IMPORTANCE_LOW);
+            NotificationChannel ch = new NotificationChannel(CHANNEL_ID, label("channel", title), NotificationManager.IMPORTANCE_LOW);
             ch.setShowBadge(false);
+            ch.setDescription(label("text", ""));
             nm.createNotificationChannel(ch);
         }
         int piFlags = PendingIntent.FLAG_UPDATE_CURRENT | (Build.VERSION.SDK_INT >= 23 ? PendingIntent.FLAG_IMMUTABLE : 0);
@@ -219,23 +296,70 @@ public class TrackingService extends Service implements LocationListener {
         PendingIntent openPi = PendingIntent.getActivity(this, 0, open, piFlags);
         Intent stop = new Intent(this, TrackingService.class).setAction(ACTION_STOP);
         PendingIntent stopPi = PendingIntent.getService(this, 1, stop, piFlags);
+
+        String status = statusText();
+        RemoteViews small = views(R.layout.notification_tracking, title, status);
+        RemoteViews big = views(R.layout.notification_tracking_big, title, status);
+        big.setTextViewText(R.id.nt_hint, label("text", ""));
         return new NotificationCompat.Builder(this, CHANNEL_ID)
                 .setSmallIcon(R.drawable.ic_stat_track)
+                .setColor(0xFF2FBF86)
+                .setStyle(new NotificationCompat.DecoratedCustomViewStyle())
+                .setCustomContentView(small)
+                .setCustomBigContentView(big)
                 .setContentTitle(title)
-                .setContentText(text)
+                .setContentText(status)
                 .setOngoing(true)
                 .setOnlyAlertOnce(true)
+                .setShowWhen(false)
                 .setPriority(NotificationCompat.PRIORITY_LOW)
                 .setCategory(NotificationCompat.CATEGORY_SERVICE)
+                .setForegroundServiceBehavior(NotificationCompat.FOREGROUND_SERVICE_IMMEDIATE)
                 .setContentIntent(openPi)
-                .addAction(0, stopLabel, stopPi)
+                .addAction(0, label("stop", "Stop"), stopPi)
                 .build();
+    }
+
+    private RemoteViews views(int layout, String title, String status) {
+        RemoteViews v = new RemoteViews(getPackageName(), layout);
+        v.setTextViewText(R.id.nt_title, title);
+        v.setTextViewText(R.id.nt_status, status);
+        v.setChronometer(R.id.nt_time, sinceElapsed, null, true);
+        return v;
+    }
+
+    private void updateNotification() {
+        NotificationManager nm = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
+        if (nm == null) return;
+        try {
+            nm.notify(NOTIFICATION_ID, buildNotification());
+        } catch (RuntimeException ignored) {
+            // нет разрешения на уведомления — запись всё равно идёт
+        }
     }
 
     // ------------------------------------------------------------------ точки
 
     @Override
     public void onLocationChanged(Location l) {
+        long nowElapsed = SystemClock.elapsedRealtime();
+        if (LocationManager.GPS_PROVIDER.equals(l.getProvider())) {
+            lastGpsAt = nowElapsed;
+        } else if (lastGpsAt != 0 && nowElapsed - lastGpsAt < GPS_QUIET_MS) {
+            return; // GPS работает — грубые сетевые точки только портят трек
+        }
+        // путь для уведомления: только точные точки и без скачков
+        if (l.hasAccuracy() && l.getAccuracy() <= DIST_MAX_ACCURACY) {
+            if (lastLoc != null) {
+                float step = lastLoc.distanceTo(l);
+                // скачок (больше DIST_MAX_STEP) в путь не идёт, но становится новой точкой отсчёта
+                if (step >= DIST_MIN_STEP && step <= DIST_MAX_STEP) distance += step;
+            }
+            if (lastLoc == null || lastLoc.distanceTo(l) >= DIST_MIN_STEP) lastLoc = new Location(l);
+        }
+        lastFixAt = SystemClock.elapsedRealtime();
+        lastAcc = l.hasAccuracy() ? l.getAccuracy() : -1f;
+
         JSONObject o = new JSONObject();
         try {
             o.put("lng", l.getLongitude());

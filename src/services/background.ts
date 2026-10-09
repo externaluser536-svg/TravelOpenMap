@@ -15,7 +15,11 @@ export interface NativeFix {
 }
 
 interface BackgroundTrackerPlugin {
-  start(o: { title: string; text: string; stopLabel: string }): Promise<{ running: boolean }>;
+  start(o: { title: string; text: string; stop: string; searching: string; channel: string; u1: string; u2: string; imperial: boolean }): Promise<{ running: boolean }>;
+  batteryStatus(): Promise<{ ignoring: boolean }>;
+  openBatterySettings(): Promise<void>;
+  gpsState(): Promise<{ enabled: boolean }>;
+  openLocationSettings(): Promise<void>;
   stop(): Promise<void>;
   drain(): Promise<{ fixes: NativeFix[]; running: boolean }>;
   status(): Promise<{ running: boolean; requested: boolean }>;

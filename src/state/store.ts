@@ -14,7 +14,9 @@ import type { MapInfo } from '../map/pmtiles';
 export type Screen = 'map' | 'notes' | 'workout' | 'profile';
 export type ProfileTab = 'stats' | 'quests' | 'trips';
 export type MapMode = 'normal' | 'measure' | 'pick' | 'zone' | 'fogedit';
-export type GpsStatus = 'off' | 'searching' | 'ok' | 'weak' | 'denied' | 'unavailable';
+import type { PlaceInfo } from '../core/placeinfo';
+
+export type GpsStatus = 'off' | 'searching' | 'ok' | 'weak' | 'denied' | 'unavailable' | 'disabled';
 
 export interface Fix {
   lng: number;
@@ -155,6 +157,8 @@ export interface AppState {
 
   position: Fix | null;
   gps: GpsStatus;
+  /** погрешность последнего положения, м */
+  gpsAcc: number | null;
   inZone: boolean;
   heading: number | null;
   compassAvailable: boolean;
@@ -197,9 +201,13 @@ export interface AppState {
   tour: { step: number } | null;
   /** показано окно «пройти обучение?» */
   tourOffer: boolean;
+  /** показано окно «записывать маршрут в фоне?» */
+  bgOffer: boolean;
   canUndoFog: boolean;
   canRedoFog: boolean;
   mapMenu: MapMenu | null;
+  /** карточка «что за место» по нажатию на карту */
+  place: PlaceInfo | null;
 
   toasts: Toast[];
   levelUp: LevelInfo | null;
@@ -228,6 +236,7 @@ export const useApp = create<AppState>((set, get) => ({
 
   position: null,
   gps: 'off',
+  gpsAcc: null,
   inZone: false,
   heading: null,
   compassAvailable: false,
@@ -263,9 +272,11 @@ export const useApp = create<AppState>((set, get) => ({
   downloadPrompt: null,
   tour: null,
   tourOffer: false,
+  bgOffer: false,
   canUndoFog: false,
   canRedoFog: false,
   mapMenu: null,
+  place: null,
 
   toasts: [],
   levelUp: null,

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useApp } from '../../state/store';
 import { usePrefs } from '../../state/prefs';
 import { useT } from '../../i18n';
@@ -7,7 +7,7 @@ import { Sheet, Switch } from '../common';
 import { importMapFile, loadCatalog, removeMap, type CatalogEntry } from '../../map/maps';
 import { activateMap, refreshMapSources } from '../../state/actions';
 import { pickFile } from '../../services/files';
-import { deleteSavedArea, requestDownload, setOnlineMaps, worldJob } from '../../state/downloads';
+import { deleteSavedArea, hereJob, requestDownload, setOnlineMaps, worldJob } from '../../state/downloads';
 import { tileCache, type CacheStats } from '../../map/tilecache';
 import { fmtBytes } from '../format';
 import { WORLD_ID } from '../../state/downloads';
@@ -21,6 +21,13 @@ export function MapsSheet() {
   const askArea = usePrefs((s) => s.askAreaPrompts);
   const saved = usePrefs((s) => s.savedAreas);
   const limitMb = usePrefs((s) => s.cacheLimitMb);
+  // положение меняется каждую секунду, а оценка размера нужна только при заметном сдвиге (≈ 10 км)
+  const hereKey = useApp((s) => (s.position ? `${s.position.lat.toFixed(1)},${s.position.lng.toFixed(1)}` : ''));
+  const hereEstimate = useMemo(() => {
+    const p = useApp.getState().position;
+    return hereKey && p ? hereJob(p, false).job.estimate : null;
+  }, [hereKey]);
+  const position = hereKey !== '';
   const [items, setItems] = useState<CatalogEntry[]>([]);
   const [busy, setBusy] = useState(false);
   const [stats, setStats] = useState<CacheStats | null>(null);
@@ -108,6 +115,11 @@ export function MapsSheet() {
               </div>
             ))}
           </div>
+        )}
+        {position && hereEstimate !== null && (
+          <button className="btn primary block" onClick={() => useApp.getState().position && requestDownload(hereJob(useApp.getState().position!).job)}>
+            <Icon name="locate" size={18} /> {t('here.save')} · ≈ {fmtBytes(hereEstimate)}
+          </button>
         )}
         {!hasWorld && (
           <button className="btn ghost block" onClick={() => requestDownload(worldJob())}>

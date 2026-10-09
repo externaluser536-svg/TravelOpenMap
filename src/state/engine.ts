@@ -40,6 +40,7 @@ import { usePrefs } from './prefs';
 import { workoutEngine } from './workoutEngine';
 import { loadTrips } from './trips';
 import { useApp, type Fix, type NoteDraft } from './store';
+import { GpsFilter, HOPELESS_ACCURACY } from '../core/gpsfilter';
 import { success, tap } from '../services/haptics';
 import { t } from '../i18n';
 
@@ -58,6 +59,7 @@ class Engine {
   private tracks = new Map<string, TrackRecord>();
   private counted = { cells: 0, areaM2: 0 };
   private lastFix: Fix | null = null;
+  private gpsFilter = new GpsFilter();
   private lastTrackPoint: TrackPoint | null = null;
   private saveTimer: ReturnType<typeof setTimeout> | null = null;
   private dirtyDays = new Set<string>();
@@ -109,12 +111,23 @@ class Engine {
   onFix(f: Fix): void {
     const app = useApp.getState();
     const prefs = usePrefs.getState();
+    const raw = f;
+    // сглаживание: несколько неточных, но согласованных фиксов подряд дают годное положение
+    const sm = this.gpsFilter.update(raw);
+    const hopeless = raw.accuracy !== undefined && raw.accuracy > HOPELESS_ACCURACY;
+    if (hopeless) {
+      // грубая точка (по сети) — ни положение, ни туман не трогаем, но сообщаем о слабом сигнале
+      app.patch({ gps: 'weak', gpsAcc: Math.round(raw.accuracy!) });
+      return;
+    }
+    if (raw.accuracy !== undefined) f = { ...raw, lng: sm.lng, lat: sm.lat, accuracy: sm.accuracy };
     const p: LngLat = { lng: f.lng, lat: f.lat };
     const zones = prefs.zones;
     const weak = f.accuracy !== undefined && f.accuracy > prefs.minAccuracy;
     const inZone = inAnyZone(p, zones);
     const first = !app.position;
-    app.patch({ position: f, gps: weak ? 'weak' : 'ok', inZone });
+    app.patch({ position: f, gps: weak ? 'weak' : 'ok', gpsAcc: f.accuracy === undefined ? null : Math.round(f.accuracy), inZone });
+    if (!inZone) this.rememberPosition(f);
     if (first && app.follow) app.patch({ flyTo: { lng: f.lng, lat: f.lat, zoom: 16, nonce: Date.now() } });
 
     // Режим тренировки: фикс идёт только в трекер тренировки — туман не открывается, исследование не считается.
@@ -170,6 +183,17 @@ class Engine {
     if (prefs.recordTrack) this.recordTrack(f);
     this.schedulePublish();
     this.scheduleSave();
+  }
+
+  private lastSavedPos: { lng: number; lat: number; t: number } | null = null;
+
+  /** Запоминает место для следующего запуска — не чаще раза в полминуты или после заметного сдвига. */
+  private rememberPosition(f: Fix): void {
+    if (f.accuracy !== undefined && f.accuracy > 300) return;
+    const last = this.lastSavedPos;
+    if (last && f.t - last.t < 30_000 && haversine(last, f) < 200) return;
+    this.lastSavedPos = { lng: f.lng, lat: f.lat, t: f.t };
+    usePrefs.getState().set({ lastPos: { lng: f.lng, lat: f.lat } });
   }
 
   private recordTrack(f: Fix): void {
@@ -288,7 +312,9 @@ class Engine {
   // ------------------------------------------------------------------ зоны
 
   setZones(zones: ExclusionZone[]): void {
-    usePrefs.getState().set({ zones });
+    // место, которое теперь внутри исключённой зоны, не должно оставаться «последним известным»
+    const last = usePrefs.getState().lastPos;
+    usePrefs.getState().set({ zones, ...(last && inAnyZone(last, zones) ? { lastPos: null } : {}) });
     this.lastFix = null;
     this.lastTrackPoint = null;
     this.recount();
@@ -561,6 +587,7 @@ class Engine {
     this.tracks.clear();
     this.notes = [];
     this.lastFix = null;
+    this.gpsFilter.reset();
     this.lastTrackPoint = null;
     this.counted = { cells: 0, areaM2: 0 };
     usePrefs.getState().set({ completed: {} });

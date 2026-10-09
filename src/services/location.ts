@@ -22,6 +22,31 @@ function toFix(p: Position): Fix {
   };
 }
 
+// ---------------------------------------------------------------- GPS выключен в настройках телефона (Android)
+let watchdog = 0;
+
+/** Пока сигнала нет, раз в несколько секунд проверяем, не выключена ли геолокация в системе, и подсказываем это. */
+function startGpsWatchdog(): void {
+  if (watchdog || !backgroundSupported()) return;
+  watchdog = window.setInterval(() => {
+    const st = useApp.getState();
+    if (st.gps !== 'searching' && st.gps !== 'disabled') return;
+    void BackgroundTracker.gpsState().then(
+      (r) => {
+        const cur = useApp.getState().gps;
+        if (!r.enabled && cur === 'searching') useApp.getState().patch({ gps: 'disabled' });
+        else if (r.enabled && cur === 'disabled') useApp.getState().patch({ gps: 'searching' });
+      },
+      () => {},
+    );
+  }, 6000);
+}
+
+function stopGpsWatchdog(): void {
+  clearInterval(watchdog);
+  watchdog = 0;
+}
+
 // ---------------------------------------------------------------- фоновая запись (Android)
 let bg: { replayer: FixReplayer; handle: { remove: () => Promise<void> } | null; onVisible: () => void } | null = null;
 
@@ -41,7 +66,17 @@ async function catchUpBackground(): Promise<void> {
 
 async function startBackground(): Promise<boolean> {
   try {
-    await BackgroundTracker.start({ title: t('bg.notif_title'), text: t('bg.notif_text'), stopLabel: t('bg.notif_stop') });
+    const imperial = usePrefs.getState().units === 'imperial';
+    await BackgroundTracker.start({
+      title: t('bg.notif_title'),
+      text: t('bg.notif_text'),
+      stop: t('bg.notif_stop'),
+      searching: t('bg.notif_searching'),
+      channel: t('bg.notif_channel'),
+      u1: t(imperial ? 'unit.mi' : 'unit.km'),
+      u2: t(imperial ? 'unit.ft' : 'unit.m'),
+      imperial,
+    });
   } catch (e) {
     if ((e as { message?: string })?.message === 'location-denied') useApp.getState().patch({ gps: 'denied' });
     return false;
@@ -83,6 +118,7 @@ export async function startLocation(): Promise<void> {
   const app = useApp.getState();
   try {
     app.patch({ gps: 'searching' });
+    startGpsWatchdog();
     try {
       const perm = await Geolocation.checkPermissions();
       if (perm.location !== 'granted' && perm.coarseLocation !== 'granted') {
@@ -104,9 +140,13 @@ export async function startLocation(): Promise<void> {
       { enableHighAccuracy: true, timeout: 30000, maximumAge: 2000, enableLocationFallback: true },
       (pos, err) => {
         if (err || !pos) {
-          const code = (err as { code?: number } | undefined)?.code;
-          if (code === 1) useApp.getState().patch({ gps: 'denied' });
-          else if (!startWebFallback()) useApp.getState().patch({ gps: 'unavailable' });
+          const e = err as { code?: number | string; message?: string } | undefined;
+          const text = `${e?.code ?? ''} ${e?.message ?? ''}`;
+          if (e?.code === 1 || /denied|permission/i.test(text)) useApp.getState().patch({ gps: 'denied' });
+          // тайм-аут — слабый сигнал: наблюдение продолжается само, запасной путь не нужен (иначе точки пошли бы дважды)
+          else if (e?.code === 3 || /time.?out|timed out/i.test(text)) {
+            if (!['ok', 'weak', 'disabled'].includes(useApp.getState().gps)) useApp.getState().patch({ gps: 'searching' });
+          } else if (!startWebFallback()) useApp.getState().patch({ gps: 'unavailable' });
           return;
         }
         engine.onFix(toFix(pos));
@@ -136,13 +176,20 @@ export function startWebFallback(): boolean {
         speed: p.coords.speed,
         t: p.timestamp || Date.now(),
       }),
-    (e) => useApp.getState().patch({ gps: e.code === 1 ? 'denied' : 'unavailable' }),
+    (e) => {
+      const st = useApp.getState();
+      if (e.code === 1) st.patch({ gps: 'denied' });
+      else if (e.code === 3) {
+        if (!['ok', 'weak', 'disabled'].includes(st.gps)) st.patch({ gps: 'searching' }); // тайм-аут — сигнал слабый, наблюдение продолжается
+      } else st.patch({ gps: 'unavailable' });
+    },
     { enableHighAccuracy: true, timeout: 30000, maximumAge: 2000 },
   );
   return true;
 }
 
 export async function stopLocation(): Promise<void> {
+  stopGpsWatchdog();
   await stopBackground();
   if (webWatchId !== null) {
     navigator.geolocation.clearWatch(webWatchId);

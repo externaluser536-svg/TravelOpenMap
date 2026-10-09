@@ -27,7 +27,10 @@ The world starts hidden in fog — it clears where you have been. Save places wi
 | 🗺️ **Online map** | [OpenFreeMap](https://openfreemap.org) tiles load by themselves as you browse and are cached on the device. Switched on only with your consent (see [Offline & privacy](#-offline--privacy)). |
 | 🚇 **Map layers** | Subway, Outdoors (trails, cycle routes, peaks, campsites), Elevation (labelled contour lines and relief shading). |
 | 📥 **Maps for offline** | Save a country or an area with a chosen detail level and a size estimate; zooming into an unfamiliar area offers to save it. Your own `.pmtiles` import from a file. |
-| 🛰️ **Background tracking** | Android: a notification-backed service records your route while the app is minimised, without Google Play services; the trail is redrawn in order when you return. |
+| 🛰️ **Background tracking** | Android: after the first GPS fix the app offers to record your route even when closed. A service without Google Play services shows a notification with time, distance and GPS accuracy and a “Stop” button; the trail is redrawn in order when you return. |
+| 📡 **Weak GPS** | Inaccurate signals are averaged instead of discarded: several consistent points in a row confirm the position. A banner shows the current error and lets you accept a weak signal. |
+| 📍 **What is this place** | Tap the map for a card: name, type (café, park, peak with elevation…), surroundings, distance from you, coordinates; add a pin or measure from there. Data comes from the map itself. |
+| 🧭 **First launch** | The map opens on a world view, fog appears after the first GPS fix; the app immediately offers to save the map of the area where you are. |
 | 🎓 **Tutorial** | After onboarding a short interface tour is offered; skip it and replay later from Settings. |
 | 🛡️ **Excluded zones** | Inside a circle (home, work) fog does not clear and steps/route are not recorded. |
 | 💾 **Your data** | On-device IndexedDB, single-file backup, GPX and GeoJSON export. |
@@ -84,7 +87,7 @@ Overviews: [0.2](docs/screenshots/overview-en-2.png) · [0.3](docs/screenshots/o
 
 * Until you allow the online map the app makes no network requests: CSP allows `self`, `blob:`, `data:` and two map hosts — `tiles.openfreemap.org` and `elevation-tiles-prod.s3.amazonaws.com`; fonts, icons and the bundled map are local; no analytics.
 * The online map is switched on in the consent dialog after onboarding or in *Profile → Offline maps*. The servers receive tile numbers (the approximate place you are viewing) and ordinary HTTP headers; notes, route and fog stay on the device.
-* Background tracking stays off until you switch it on; track data never leaves the device.
+* Background tracking is switched on only with your consent (asked after the first GPS fix); track data never leaves the device.
 * Android: the `INTERNET` permission is added by default. Build without it: `node scripts/configure-native.mjs --offline-only`.
 * `npm run test:e2e` checks the production build in Chromium: without consent no request leaves the device, after consent only the two map hosts are contacted.
 
@@ -112,7 +115,9 @@ Android/iOS builds, signing, maps, troubleshooting: **[INSTALLATION.en.md](INSTA
 * The Android release build (APK/AAB) is built in GitHub Actions ([`release-test.yml`](.github/workflows/release-test.yml)) and published as a pre-release; it is signed with a public test key — for testing only. The CI build, including the background tracking service, passes; installing the APK on a device was not tested.
 * Verified in Chromium (unit tests, e2e, screenshots). Native builds on devices, real GPS/compass sensors, phone camera, the background service on a real phone and iOS WKWebView behaviour were not tested.
 * Online mode was tested against mocked servers (a tiny OpenMapTiles tile set plus real relief tiles when reachable). The real OpenFreeMap is unreachable from the development environment: response format, CORS, rate limits and layer data coverage were not verified.
-* Background tracking is Android only; on iOS and the web fog and workouts are recorded while the app is on screen.
+* Background tracking is Android only; on iOS and the web fog and workouts are recorded while the app is on screen. The recording notification layout was verified only by the CI build, not on a phone.
+* The place card shows what the map tiles store (name, type, peak elevation, house number): addresses, phones and opening hours are usually absent.
+* GPS smoothing helps with noisy signals but does not replace open sky: with a steady error of hundreds of metres nothing is recorded.
 * An offline area is capped at 80,000 tiles, zoom up to 14 (relief up to 12); size is an estimate.
 * Map fonts: Latin, Cyrillic, Greek.
 

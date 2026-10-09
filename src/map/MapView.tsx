@@ -17,6 +17,8 @@ import { setProtocolAdder } from './dem';
 import { categoryById } from '../core/categories';
 import { EQUATOR_M, haversine, pathLength, formatDistance, type LngLat } from '../core/geo';
 import { applyFogStroke } from '../state/actions';
+import { buildPlace } from '../core/placeinfo';
+import { t } from '../i18n';
 import { Icon } from '../ui/icons';
 import { tap } from '../services/haptics';
 
@@ -53,10 +55,16 @@ export const mapApi = {
   },
 };
 
-/** С обзорной картой мира можно отдаляться до континентов, без неё — только до региона. */
-function minZoomFor(sources: readonly { bounds: [number, number, number, number] }[], online = false): number {
-  if (online) return 2;
-  return sources.some((s) => s.bounds[2] - s.bounds[0] > 300) ? 2 : 6;
+/** Отдалять карту можно до континентов: стартовый вид — весь мир, а не какая-то одна страна. */
+function minZoomFor(_sources: readonly { bounds: [number, number, number, number] }[], _online = false): number {
+  return 2;
+}
+
+/** Где открыть карту: на последнем известном месте пользователя, а без него — на мировом виде. */
+function startView(pos: { lng: number; lat: number } | null): { center: [number, number]; zoom: number } {
+  const last = usePrefs.getState().lastPos;
+  const at = pos ?? last;
+  return at ? { center: [at.lng, at.lat], zoom: 15.5 } : { center: [15, 25], zoom: 2.2 };
 }
 
 const EMPTY_FC = { type: 'FeatureCollection' as const, features: [] };
@@ -82,6 +90,11 @@ function addOverlays(map: MlMap): void {
     map.addSource('track', { type: 'geojson', data: EMPTY_FC });
     map.addSource('workout', { type: 'geojson', data: EMPTY_FC });
   }
+  if (!map.getSource('place-pt')) map.addSource('place-pt', { type: 'geojson', data: EMPTY_FC });
+  if (!map.getLayer('place-pin')) {
+    map.addLayer({ id: 'place-halo', type: 'circle', source: 'place-pt', paint: { 'circle-radius': 17, 'circle-color': '#FF5C93', 'circle-opacity': 0.22, 'circle-blur': 0.4 } });
+    map.addLayer({ id: 'place-pin', type: 'circle', source: 'place-pt', paint: { 'circle-radius': 6.5, 'circle-color': '#FF5C93', 'circle-stroke-color': '#ffffff', 'circle-stroke-width': 2.5 } });
+  }
   if (!map.getLayer('track-casing')) {
     map.addLayer({ id: 'track-casing', type: 'line', source: 'track', layout: { 'line-cap': 'round', 'line-join': 'round', visibility: 'none' }, paint: { 'line-color': '#0b1220', 'line-width': 6, 'line-opacity': 0.5 } });
     map.addLayer({ id: 'track-line', type: 'line', source: 'track', layout: { 'line-cap': 'round', 'line-join': 'round', visibility: 'none' }, paint: { 'line-color': '#3DDC97', 'line-width': 3.2 } });
@@ -101,6 +114,33 @@ function addOverlays(map: MlMap): void {
   }
 }
 
+/** Источники, которые рисует само приложение (не данные карты). */
+const OVERLAY_SOURCES = new Set(['measure-line', 'measure-pts', 'track', 'workout', 'place-pt', 'dem', 'contours']);
+
+/** Находит под точкой нажатия объекты карты и открывает карточку «что за место». */
+function identifyPlace(map: MlMap, point: { x: number; y: number }, lngLat: { lng: number; lat: number }): void {
+  const r = 14;
+  const raw = map.queryRenderedFeatures([
+    [point.x - r, point.y - r],
+    [point.x + r, point.y + r],
+  ]);
+  const feats = raw
+    .filter((f) => f.sourceLayer && !OVERLAY_SOURCES.has(String(f.source)))
+    .map((f) => {
+      let dist = 0;
+      if (f.geometry.type === 'Point') {
+        const [lng, lat] = f.geometry.coordinates as [number, number];
+        const p = map.project([lng, lat]);
+        dist = Math.hypot(p.x - point.x, p.y - point.y);
+      }
+      return { sourceLayer: f.sourceLayer as string, props: (f.properties ?? {}) as Record<string, unknown>, dist };
+    });
+  const { lang, units } = usePrefs.getState();
+  const info = buildPlace(feats, { lng: lngLat.lng, lat: lngLat.lat }, lang, t, (m) => formatDistance(m, units, lang));
+  tap('light');
+  useApp.getState().patch({ place: info });
+}
+
 export function MapView() {
   const ref = useRef<HTMLDivElement>(null);
   const mapRef = useRef<MlMap | null>(null);
@@ -110,6 +150,7 @@ export function MapView() {
   const clustersRef = useRef<NoteClusters | null>(null);
   const syncRef = useRef<() => void>(() => {});
   const pressRef = useRef<Marker | null>(null);
+  const flyAt = useRef(0);
   const [pins, setPins] = useState<{ key: string; el: HTMLElement; item: ClusterItem }[]>([]);
   const [ready, setReady] = useState(false);
 
@@ -119,6 +160,8 @@ export function MapView() {
   const notes = useApp((s) => s.notes);
   const peek = useApp((s) => s.peek);
   const position = useApp((s) => s.position);
+  const hasStart = useApp((s) => s.position !== null);
+  const cells = useApp((s) => s.stats.cells);
   const heading = useApp((s) => s.heading);
   const follow = useApp((s) => s.follow);
   const orientMap = useApp((s) => s.orientMap);
@@ -130,6 +173,7 @@ export function MapView() {
   const fogDraft = useApp((s) => s.fogDraft);
   const mode = useApp((s) => s.mode);
   const mapMenu = useApp((s) => s.mapMenu);
+  const place = useApp((s) => s.place);
   const fogOpacity = usePrefs((s) => s.fogOpacity);
   const fogWind = usePrefs((s) => s.fogWind);
   const screen = useApp((s) => s.screen);
@@ -171,8 +215,7 @@ export function MapView() {
     const map = new MlMap({
       container: ref.current,
       style: buildMapStyle(currentStyleState()),
-      center: pos ? [pos.lng, pos.lat] : mapInfo.center,
-      zoom: 15.5,
+      ...startView(pos),
       minZoom: minZoomFor(useApp.getState().mapSources, usePrefs.getState().onlineMaps || usePrefs.getState().savedAreas.length > 0),
       maxZoom: 19.5,
       maxPitch: 0,
@@ -240,7 +283,7 @@ export function MapView() {
         if (st.mode === 'zone' && st.zoneDraft) st.patch({ zoneDraft: { ...st.zoneDraft, lng: c.lng, lat: c.lat } });
         if (st.mode === 'fogedit' && st.fogDraft?.tool === 'circle') st.patch({ fogDraft: { ...st.fogDraft, lng: fp?.lng ?? c.lng, lat: fp?.lat ?? c.lat } });
         const covering = st.mapSources.length ? st.mapSources : [mapInfo];
-        const missing = !(usePrefs.getState().onlineMaps || usePrefs.getState().savedAreas.length > 0) && !covering.some(({ bounds: [w, s, e, n] }) => c.lng >= w && c.lng <= e && c.lat >= s && c.lat <= n);
+        const missing = map.getZoom() >= 6 && !(usePrefs.getState().onlineMaps || usePrefs.getState().savedAreas.length > 0) && !covering.some(({ bounds: [w, s, e, n] }) => c.lng >= w && c.lng <= e && c.lat >= s && c.lat <= n);
         if (missing !== st.mapMissing) st.patch({ mapMissing: missing });
       });
     });
@@ -249,6 +292,11 @@ export function MapView() {
       const st = useApp.getState();
       if (Date.now() < suppressClickUntil) return;
       if (st.mapMenu) st.patch({ mapMenu: null });
+      if (st.mode === 'normal' && st.screen === 'map' && st.workoutLive === null && !ignoreTarget(e.originalEvent?.target ?? null)) {
+        // нажатие по карте: что это за место
+        identifyPlace(map, e.point, e.lngLat);
+        return;
+      }
       if (st.mode === 'measure') {
         st.patch({ measurePoints: [...st.measurePoints, { lng: e.lngLat.lng, lat: e.lngLat.lat }] });
         tap('light');
@@ -449,6 +497,8 @@ export function MapView() {
     if (map.getSource('workout')) {
       (map.getSource('workout') as GeoJSONSource).setData({ type: 'FeatureCollection', features: useApp.getState().workoutRoute.length > 1 ? [{ type: 'Feature', geometry: { type: 'LineString', coordinates: useApp.getState().workoutRoute }, properties: {} }] : [] });
     }
+    const pl = useApp.getState().place;
+    (map.getSource('place-pt') as GeoJSONSource | undefined)?.setData({ type: 'FeatureCollection', features: pl ? [{ type: 'Feature', geometry: { type: 'Point', coordinates: [pl.lng, pl.lat] }, properties: {} }] : [] });
     const lines = engine.trackLines();
     (map.getSource('track') as GeoJSONSource).setData({
       type: 'FeatureCollection',
@@ -458,7 +508,7 @@ export function MapView() {
 
   useEffect(() => {
     syncOverlays();
-  }, [measurePoints, units, lang, ready, peek, workoutRoute]);
+  }, [measurePoints, units, lang, ready, peek, workoutRoute, place]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -471,8 +521,9 @@ export function MapView() {
   // ---------------------------------------------------------------- туман
   useEffect(() => {
     // в режиме тренировки туман не нужен — скрываем, как в режиме «без тумана»
-    fogRef.current?.setPeek(peek || training);
-  }, [peek, training, ready]);
+    // и пока положение ещё не определено, а открытых мест нет: «туман» на всей карте до первой точки GPS не нужен
+    fogRef.current?.setPeek(peek || training || (!hasStart && !cells));
+  }, [peek, training, ready, hasStart, cells]);
   useEffect(() => {
     fogRef.current?.requestDraw();
   }, [fogOpacity, zones, zoneDraft, fogDraft, appReady, ready, theme]);
@@ -504,6 +555,7 @@ export function MapView() {
   useEffect(() => {
     if (flyTo && mapRef.current) {
       const m = mapRef.current;
+      flyAt.current = Date.now();
       const fog = useApp.getState().mode === 'fogedit';
       const h = m.getContainer().clientHeight;
       m.flyTo({
@@ -526,6 +578,8 @@ export function MapView() {
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !position || !follow) return;
+    // пока идёт перелёт (например, к первой точке GPS), слежение его не перебивает
+    if (Date.now() - flyAt.current < 1500) return;
     const opts: { center: [number, number]; duration: number; bearing?: number } = { center: [position.lng, position.lat], duration: 700 };
     if (orientMap && heading !== null) opts.bearing = heading;
     map.easeTo(opts);

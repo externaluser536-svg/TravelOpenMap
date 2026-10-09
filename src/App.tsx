@@ -34,6 +34,7 @@ import { startCompass } from './services/compass';
 import { cancelMode } from './state/actions';
 import { DownloadPrompts } from './ui/DownloadPrompts';
 import { TourOffer, TourOverlay } from './ui/Tour';
+import { BackgroundOffer } from './ui/BackgroundOffer';
 import { startPromptWatchers } from './state/prompts';
 
 export default function App() {
@@ -58,7 +59,8 @@ export default function App() {
       }
       const sources = await openAllMaps();
       if (info) useApp.getState().patch({ mapInfo: info, mapSources: sources });
-      if (usePrefs.getState().onboarded && !import.meta.env.MODE.includes('demo')) {
+      // в демо-сборке геолокация по умолчанию выключена (скриншоты и проверки), включается параметром ?gps
+      if (usePrefs.getState().onboarded && (!import.meta.env.MODE.includes('demo') || location.search.includes('gps'))) {
         void startLocation();
         void startCompass(false);
       }
@@ -132,6 +134,7 @@ export default function App() {
       <Onboarding />
       {mapInfo && <DownloadPrompts />}
       <TourOffer />
+      <BackgroundOffer />
       <TourOverlay />
     </div>
   );

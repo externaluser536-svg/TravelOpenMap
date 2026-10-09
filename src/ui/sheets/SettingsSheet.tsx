@@ -4,10 +4,10 @@ import { useT } from '../../i18n';
 import { Icon } from '../icons';
 import { Segmented, Sheet, Switch } from '../common';
 import { formatDistance } from '../../core/geo';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { ProfileForm, ThemePicker, type ProfileValue } from '../ProfileForm';
 import { checkNickname, normalizeNick } from '../../core/profile';
-import { backgroundSupported } from '../../services/background';
+import { BackgroundTracker, backgroundSupported } from '../../services/background';
 import { setBackgroundTracking } from '../../services/location';
 import { startTour } from '../../state/tour';
 
@@ -17,6 +17,15 @@ function BackgroundRow() {
   const on = usePrefs((s) => s.backgroundTracking);
   const [ask, setAsk] = useState(false);
   const supported = backgroundSupported();
+  const [batteryOk, setBatteryOk] = useState<boolean | null>(null);
+  // после возвращения из системных настроек состояние обновляется
+  useEffect(() => {
+    if (!supported || !on) return;
+    const check = () => void BackgroundTracker.batteryStatus().then((r) => setBatteryOk(r.ignoring), () => setBatteryOk(null));
+    check();
+    document.addEventListener('visibilitychange', check);
+    return () => document.removeEventListener('visibilitychange', check);
+  }, [supported, on]);
   return (
     <div className="set-col" data-tour="background">
       <div className="set-row">
@@ -53,6 +62,15 @@ function BackgroundRow() {
         </div>
       )}
       <small className="muted">{supported ? t('bg.hint') : t('bg.unsupported')}</small>
+      {supported && on && batteryOk === false && (
+        <>
+          <button className="btn ghost block" onClick={() => void BackgroundTracker.openBatterySettings()}>
+            <Icon name="zap" size={16} /> {t('bg.battery')}
+          </button>
+          <small className="muted">{t('bg.battery_hint')}</small>
+        </>
+      )}
+      {supported && on && batteryOk === true && <small className="muted">✓ {t('bg.battery_ok')}</small>}
     </div>
   );
 }

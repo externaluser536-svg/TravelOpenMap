@@ -59,6 +59,10 @@ export interface Prefs {
   brushPx: number;
   /** писать трек, пока приложение свёрнуто (Android: служба с уведомлением) */
   backgroundTracking: boolean;
+  /** вопрос про запись в фоне уже задавали */
+  backgroundPrompted: boolean;
+  /** последнее известное место — карта открывается там, а не на «стартовой» стране */
+  lastPos: { lng: number; lat: number } | null;
   /** области, для которых предложение отклонено */
   dismissedAreas: string[];
   /** вес для расчёта калорий, кг */
@@ -78,7 +82,7 @@ export const DEFAULT_PREFS: Prefs = {
   revealRadius: 60,
   fogOpacity: 0.95,
   fogWind: 1,
-  minAccuracy: 60,
+  minAccuracy: 100,
   recordTrack: true,
   haptics: true,
   zones: [],
@@ -95,6 +99,8 @@ export const DEFAULT_PREFS: Prefs = {
   askAreaPrompts: true,
   brushPx: 30,
   backgroundTracking: false,
+  backgroundPrompted: false,
+  lastPos: null,
   dismissedAreas: [],
   weightKg: 70,
   nickname: '',

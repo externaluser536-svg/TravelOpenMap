@@ -2,7 +2,7 @@
 // Без согласия (настройка «онлайн-карта») приложение не делает ни одного сетевого запроса.
 
 import { DETAIL_PRESETS, type Country, type DetailId, countryName } from '../data/countries';
-import { WORLD_BBOX, WORLD_MAX_ZOOM, type AreaPlan, planTitle } from '../core/regions';
+import { WORLD_BBOX, WORLD_MAX_ZOOM, type AreaPlan, planArea as planRegion, planTitle } from '../core/regions';
 import { AreaError, OMT_MAX_ZOOM, planArea as planTiles, removeArea, saveArea, type AreaJob } from '../map/offline-areas';
 import { usePrefs } from './prefs';
 import { useApp, type DownloadJob } from './store';
@@ -62,6 +62,17 @@ export function areaJob(plan: AreaPlan, at: { lng: number; lat: number }, dem = 
     estimate: planTiles({ bbox: plan.bbox, maxZoom: plan.maxZoom, dem }).estimate,
     fly: true,
   };
+}
+
+/** Карта вокруг указанного места (обычно — где вы сейчас): страна или область по плану, а вне каталога — квадрат ≈ 30 км. */
+export function hereJob(at: { lng: number; lat: number }, dem = usePrefs.getState().mapLayers.elevation): { job: DownloadJob; key: string } {
+  const plan = planRegion(at.lng, at.lat, 13);
+  if (plan) return { job: areaJob(plan, at, dem), key: plan.key };
+  const dLat = 0.15;
+  const dLng = dLat / Math.max(0.2, Math.cos((at.lat * Math.PI) / 180));
+  const bbox: [number, number, number, number] = [Math.max(-180, at.lng - dLng), Math.max(-85, at.lat - dLat), Math.min(180, at.lng + dLng), Math.min(85, at.lat + dLat)];
+  const key = `here:${at.lat.toFixed(1)},${at.lng.toFixed(1)}`;
+  return { key, job: { id: key, name: t('here.name'), bbox, maxZoom: 13, dem, estimate: planTiles({ bbox, maxZoom: 13, dem }).estimate, fly: false } };
 }
 
 /** Сохранение по запросу пользователя: если сеть ещё не разрешена — сначала спрашиваем согласие. */

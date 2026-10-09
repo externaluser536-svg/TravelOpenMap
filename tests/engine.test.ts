@@ -76,6 +76,28 @@ describe('engine', () => {
     expect(useApp.getState().gps).toBe('weak');
   });
 
+  it('слабый, но стабильный сигнал не пропадает: усреднённые фиксы открывают туман', () => {
+    usePrefs.getState().set({ minAccuracy: 100 });
+    // одиночный фикс ±130 м — слишком неточен
+    engine.onFix({ ...fix(monaco), accuracy: 130 });
+    expect(useApp.getState().gps).toBe('weak');
+    expect(engine.grid.count).toBe(0);
+    // несколько согласованных фиксов подряд — положение подтверждается
+    for (let i = 0; i < 8; i++) engine.onFix({ ...fix(monaco, 2), accuracy: 130 });
+    expect(useApp.getState().gps).toBe('ok');
+    expect(useApp.getState().gpsAcc).toBeLessThanOrEqual(100);
+    expect(engine.grid.count).toBeGreaterThan(0);
+  });
+
+  it('грубый фикс по сети (≥ 500 м) положение не сдвигает', () => {
+    engine.onFix(fix(monaco));
+    const before = useApp.getState().position;
+    engine.onFix({ ...fix({ lng: monaco.lng + 0.05, lat: monaco.lat }), accuracy: 2500 });
+    expect(useApp.getState().position).toEqual(before);
+    expect(useApp.getState().gps).toBe('weak');
+    expect(useApp.getState().gpsAcc).toBe(2500);
+  });
+
   it('«телепорт» (перелёт) не открывает линию между точками и не считает дистанцию', () => {
     engine.onFix(fix(monaco));
     const far = destination(monaco, 45, 300000); // 300 км
